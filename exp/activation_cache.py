@@ -26,7 +26,7 @@ def batch_act_cache(
             inputs_bL.input_ids.shape[1],
             hidden_dim,
         )
-    ).to(device)
+    )
 
     for batch_start in trange(
         0, inputs_bL.input_ids.shape[0], batch_size, desc="Batched Forward"
@@ -49,14 +49,14 @@ def batch_act_cache(
 
 if __name__ == "__main__":
     # Define necessary inputs for batch_act_cache
-    num_stories = 1000
+    num_stories = 100
     batch_size = 10
     dname = "SimpleStories/SimpleStories"
     device = DEVICE
 
-    model_name = "openai-community/gpt2"
+    # model_name = "openai-community/gpt2"
     # model_name = "google/gemma-3-12b-pt"
-    # model_name = "meta-llama/Llama-3.1-8B"
+    model_name = "meta-llama/Llama-3.1-8B"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
 
@@ -71,8 +71,14 @@ if __name__ == "__main__":
         device_map=device,  # Use the defined device
         dispatch=True,
     )
-    hidden_dim = model.config.n_embd
-    submodules = [model.transformer.h[l] for l in range(model.config.n_layer)]
+
+    if "gpt2" in model_name:
+        hidden_dim = model.config.n_embd
+        submodules = [model.transformer.h[l] for l in range(model.config.n_layer)]
+    elif "Llama" in model_name:
+        print(model)
+        hidden_dim = model.config.hidden_size
+        submodules = [model.model.layers[l] for l in range(model.config.num_hidden_layers)]
 
     # Prepare inputs
     inputs_bL = model.tokenizer(
