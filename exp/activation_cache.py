@@ -44,6 +44,7 @@ def batch_act_cache(
             for l, sm in enumerate(submodules):
                 all_acts_LbPD[l, batch_start:batch_end] = sm.output[0].save()
 
+    all_acts_LbPD = all_acts_LbPD.to("cpu")
     return all_acts_LbPD
 
 
@@ -54,9 +55,9 @@ if __name__ == "__main__":
     dname = "SimpleStories/SimpleStories"
     device = DEVICE
 
-    # model_name = "openai-community/gpt2"
+    model_name = "openai-community/gpt2"
     # model_name = "google/gemma-3-12b-pt"
-    model_name = "meta-llama/Llama-3.1-8B"
+    # model_name = "meta-llama/Llama-3.1-8B"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
 
