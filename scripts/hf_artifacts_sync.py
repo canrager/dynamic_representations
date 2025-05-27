@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from huggingface_hub import HfApi, create_repo, hf_hub_download
+from huggingface_hub import HfApi, create_repo, upload_large_folder, snapshot_download
 from huggingface_hub.utils import RepositoryNotFoundError
 
 def main():
@@ -27,54 +27,37 @@ def main():
         create_repo(repo_id, repo_type="model")
         print("Repository created")
     
-    # 2. Upload local files that don't exist on repo
-    if local_artifacts_dir.exists():
-        print("\nUploading new local files...")
+    # 2. Upload local files using upload_large_folder (optimized with resumable uploads)
+    if local_artifacts_dir.exists() and any(local_artifacts_dir.rglob("*")):
+        print("\nUploading artifacts folder...")
         try:
-            repo_files = set(api.list_repo_files(repo_id))
-        except:
-            repo_files = set()
-        
-        for local_file in local_artifacts_dir.rglob("*"):
-            if local_file.is_file():
-                relative_path = local_file.relative_to(local_artifacts_dir)
-                relative_path_str = str(relative_path).replace("\\", "/")  # Normalize for HF
-                
-                if relative_path_str not in repo_files:
-                    print(f"  Uploading: {relative_path_str}")
-                    api.upload_file(
-                        path_or_fileobj=str(local_file),
-                        path_in_repo=relative_path_str,
-                        repo_id=repo_id,
-                        repo_type="model"
-                    )
-                else:
-                    print(f"  Skipping (exists): {relative_path_str}")
+            upload_large_folder(
+                folder_path=str(local_artifacts_dir),
+                repo_id=repo_id,
+                repo_type="dataset",
+                ignore_patterns=[".cache", ".git", "__pycache__", "*.pyc"]
+            )
+            print("Upload completed")
+        except Exception as e:
+            print(f"Upload error: {e}")
     else:
-        print(f"Local artifacts directory doesn't exist: {local_artifacts_dir}")
+        print(f"Local artifacts directory is empty or doesn't exist: {local_artifacts_dir}")
     
-    # 3. Download repo files that don't exist locally
-    print("\nDownloading new repo files...")
+    # 3. Download repo files using snapshot_download (optimized with concurrent downloads)
+    print("\nDownloading repo files...")
     try:
-        repo_files = api.list_repo_files(repo_id)
         local_artifacts_dir.mkdir(parents=True, exist_ok=True)
         
-        for repo_file in repo_files:
-            local_file_path = local_artifacts_dir / repo_file
-            
-            if not local_file_path.exists():
-                print(f"  Downloading: {repo_file}")
-                local_file_path.parent.mkdir(parents=True, exist_ok=True)
-                hf_hub_download(
-                    repo_id=repo_id,
-                    filename=repo_file,
-                    local_dir=local_artifacts_dir,
-                    repo_type="model"
-                )
-            else:
-                print(f"  Skipping (exists): {repo_file}")
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="model",
+            local_dir=str(local_artifacts_dir),
+            local_dir_use_symlinks=False,
+            max_workers=8  # Concurrent downloads
+        )
+        print("Download completed")
     except Exception as e:
-        print(f"Error downloading files: {e}")
+        print(f"Download error: {e}")
     
     print("\nSync completed!")
 

@@ -8,7 +8,7 @@ from tqdm import trange
 from typing import List
 from torch import Tensor
 from torch.nn import Module
-from transformers import BatchEncoding
+from transformers import BatchEncoding, GPT2Tokenizer
 
 
 def batch_act_cache(
@@ -55,9 +55,9 @@ if __name__ == "__main__":
     dname = "SimpleStories/SimpleStories"
     device = DEVICE
 
-    # model_name = "openai-community/gpt2"
+    model_name = "openai-community/gpt2"
     # model_name = "google/gemma-3-12b-pt"
-    model_name = "meta-llama/Llama-3.1-8B"
+    # model_name = "meta-llama/Llama-3.1-8B"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
 
@@ -74,10 +74,19 @@ if __name__ == "__main__":
     )
 
     if "gpt2" in model_name:
+        print(model)
+        print(model.config)
         hidden_dim = model.config.n_embd
         submodules = [model.transformer.h[l] for l in range(model.config.n_layer)]
+
+        # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
+        model.tokenizer = GPT2Tokenizer.from_pretrained(model_name, cache_dir=MODELS_DIR)
+        model.tokenizer.add_bos_token = True
+        model.tokenizer.pad_token = model.tokenizer.eos_token
+
     elif "Llama" in model_name:
         print(model)
+        print(model.config)
         hidden_dim = model.config.hidden_size
         submodules = [model.model.layers[l] for l in range(model.config.num_hidden_layers)]
 
