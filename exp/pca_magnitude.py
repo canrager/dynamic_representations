@@ -143,50 +143,52 @@ if __name__ == "__main__":
     # Compute or load PCA - Tensorized version
     # act_LbD has shape [L, b, D] where L is layers, b is batch*positions, D is hidden_dim
     # the columns of U are sing vectors as well as rows of Vt
-    U_LbC, S_LC, Vt_LCD = compute_or_load_svd(act_LbD, model_name, num_stories, force_recompute)
+    U_LbC, S_LC, Vt_LCD, means_LD = compute_or_load_svd(act_LbD, model_name, num_stories, force_recompute)
     
 
     # # Select layer, select PCA component, select Story
-    # layer_idx = 6
-    # pca_component_idx = 0
-    # story_idx = 0
+    layer_idx = 6
+    pca_component_idx = 0
+    story_idx = 0
 
-    # seq_tokens = load_tokens_of_story(story_idx, model_name, do_omit_BOS_token, trunc_seq_length)
-    # print("Sequence_tokens:")
-    # print("".join(seq_tokens))
+    seq_tokens = load_tokens_of_story(story_idx, model_name, do_omit_BOS_token, trunc_seq_length)
+    print("Sequence_tokens:")
+    print("".join(seq_tokens))
 
-    # story_PD = act_LBPD[layer_idx, story_idx, mask_BP[story_idx].bool(), :]
-    # pca_D = Vt_LCD[layer_idx, pca_component_idx, :]
+    story_PD = act_LBPD[layer_idx, story_idx, mask_BP[story_idx].bool(), :]
+    story_centered_PD = story_PD - means_LD[:, None, None, :]
+    pca_D = Vt_LCD[layer_idx, pca_component_idx, :]
 
-    # story_pca = story_PD @ pca_D
+    story_pca = story_centered_PD @ pca_D
 
-    # plot_title=f"story-{story_idx}_pca-{pca_component_idx}_layer{layer_idx}_omit-bos-{do_omit_BOS_token}_trunc-story-{do_truncate_seq_length}"
-    # plot_save_fname = f"single-evolution_{model_str}_{plot_title}.png"
-    # plot_single_evolution(story_pca, plot_label="story0", plot_title=plot_title, save_fname=plot_save_fname)
+    plot_title=f"story-{story_idx}_pca-{pca_component_idx}_layer{layer_idx}_omit-bos-{do_omit_BOS_token}_trunc-story-{do_truncate_seq_length}"
+    plot_save_fname = f"single-evolution_{model_str}_{plot_title}.png"
+    plot_single_evolution(story_pca, plot_label="story0", plot_title=plot_title, save_fname=plot_save_fname)
 
 
 
     # # All layers, range of PCA components, select story
 
-    # top_pca_components = 10
-    # story_idx = 0
+    top_pca_components = 10
+    story_idx = 0
 
-    # seq_tokens = load_tokens_of_story(story_idx, model_name, do_omit_BOS_token, trunc_seq_length)
-    # print("Sequence_tokens:")
-    # print("".join(seq_tokens))
+    seq_tokens = load_tokens_of_story(story_idx, model_name, do_omit_BOS_token, trunc_seq_length)
+    print("Sequence_tokens:")
+    print("".join(seq_tokens))
     
 
-    # # TODO: Check the actual tokens and masks align, BOS token handling?
-    # story_LPD = act_LBPD[:, story_idx, mask_BP[story_idx].bool(), :]
-    # pca_LcD = Vt_LCD[:, :top_pca_components, :]  # Use all layers and top_pca_components
-    # story_pca_LcP = torch.einsum("LPD,LcD->LcP", story_LPD, pca_LcD)
+    # TODO: Check the actual tokens and masks align, BOS token handling?
+    story_LPD = act_LBPD[:, story_idx, mask_BP[story_idx].bool(), :]
+    story_centered_LPD = story_LPD - means_LD[:, None, None, :]
+    pca_LcD = Vt_LCD[:, :top_pca_components, :]  # Use all layers and top_pca_components
+    story_pca_LcP = torch.einsum("LPD,LcD->LcP", story_centered_LPD, pca_LcD)
 
-    # plot_title=f"story-{story_idx}_top-pca-components-{top_pca_components}_omit-bos-{do_omit_BOS_token}_trunc-story-{do_truncate_seq_length}"
-    # plot_save_fname = f"evolution-single-story_{model_str}_{plot_title}.png"
-    # plot_evolutions_across_layers_pca_components(story_pca_LcP, plot_title=plot_title, save_fname=plot_save_fname, sequence_tokens=seq_tokens)
+    plot_title=f"story-{story_idx}_top-pca-components-{top_pca_components}_omit-bos-{do_omit_BOS_token}_trunc-story-{do_truncate_seq_length}"
+    plot_save_fname = f"evolution-single-story_{model_str}_{plot_title}.png"
+    plot_evolutions_across_layers_pca_components(story_pca_LcP, plot_title=plot_title, save_fname=plot_save_fname, sequence_tokens=seq_tokens)
 
 
-    # All layers, range of PCA components, range of stories
+    ## All layers, range of PCA components, range of stories
 
     top_pca_components = 10
     top_story_idxs = 3
@@ -198,8 +200,9 @@ if __name__ == "__main__":
 
     # Note: with constant truncation, should already be truncated 
     story_LBPD = act_LBPD[:, :top_story_idxs, :trunc_seq_length, :]
+    story_centered_LBPD = story_LBPD - means_LD[:, None, None, :]
     pca_LcD = Vt_LCD[:, :top_pca_components, :]  # Use all layers and top_pca_components
-    story_pca_LBcP = torch.einsum("LBPD,LcD->LBcP", story_LBPD, pca_LcD)
+    story_pca_LBcP = torch.einsum("LBPD,LcD->LBcP", story_centered_LBPD, pca_LcD)
 
     plot_title=f"stories-first-{top_story_idxs}_top-pca-components-{top_pca_components}_omit-bos-{do_omit_BOS_token}_trunc-story-{do_truncate_seq_length}"
     plot_save_fname = f"plot_{model_str}_{plot_title}.png"
