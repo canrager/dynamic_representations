@@ -201,9 +201,9 @@ if __name__ == "__main__":
         num_stories=num_stories,
         story_idxs=None,  # Load for all stories for SVD
         omit_BOS_token=do_omit_BOS_token,
-        truncate_seq_length=do_truncate_seq_length,
+        truncate_to_min_seq_length=do_truncate_seq_length,
         subtract_mean=subtract_mean,
-        max_tokens_per_story=max_tokens_per_story,
+        truncate_seq_length=max_tokens_per_story,
     )
 
     # Load SVD results

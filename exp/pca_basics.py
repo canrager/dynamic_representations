@@ -6,8 +6,6 @@ from src.project_config import ARTIFACTS_DIR
 from src.exp_utils import compute_or_load_svd, load_tokens_of_story, load_activations
 
 
-
-
 if __name__ == "__main__":
     num_stories = 100
     reconstruction_threshold = 0.8
