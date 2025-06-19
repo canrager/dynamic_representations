@@ -222,18 +222,9 @@ if __name__ == "__main__":
         "b p d, c d -> b p c",
     )
 
-    # Computing in single batch exceeds GPU memory
-    # pca_decomposition_BPCD = einops.einsum(
-    #     pca_coeffs_BPC,
-    #     Vt_CD,
-    #     "b p c, c d -> b p c d"
-    # )
-    # pca_cumulative_reconstruction_BPCD = torch.cumsum(
-    #     pca_decomposition_BPCD, dim=-2
-    # )
-    # pca_cumulative_variance_BPC = torch.sum(pca_cumulative_reconstruction_BPCD**2, dim=-1)
     reconstruction_BPD = torch.zeros_like(story_BPD).to(DEVICE)
     pca_cumulative_variance_BPC = torch.zeros_like(pca_coeffs_BPC).to(DEVICE)
+    
     for c in range(num_components):
         reconstruction_BPD += einops.einsum(
             pca_coeffs_BPC[:, :, c],
@@ -242,13 +233,12 @@ if __name__ == "__main__":
         )
         pca_cumulative_variance_BPC[:, :, c] = torch.sum(reconstruction_BPD**2, dim=-1)
 
-    
-    # Explained variance
+    # Compute explained variance
     explained_variance_cumulative_BPC = (
         pca_cumulative_variance_BPC / total_variance_BP[:, :, None]
     ).cpu()
 
-    # Find first component that meets threshold
+    # Find first k components that meet reconstruction_thresholds for explained variance
     meets_threshold_BPCT = (
         explained_variance_cumulative_BPC[:, :, :, None]
         >= torch.tensor(reconstruction_thresholds)[None, None, None, :]
@@ -283,4 +273,14 @@ if __name__ == "__main__":
     )
 
 
-# TODO am I subtracting the mean twice?
+    #NOTE Computing pca_cumulative_variance_BPC in single batch exceeds GPU memory
+
+    # pca_decomposition_BPCD = einops.einsum(
+    #     pca_coeffs_BPC,
+    #     Vt_CD,
+    #     "b p c, c d -> b p c d"
+    # )
+    # pca_cumulative_reconstruction_BPCD = torch.cumsum(
+    #     pca_decomposition_BPCD, dim=-2
+    # )
+    # pca_cumulative_variance_BPC = torch.sum(pca_cumulative_reconstruction_BPCD**2, dim=-1)
