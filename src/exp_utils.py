@@ -8,7 +8,7 @@ from sparsify import Sae
 
 from src.project_config import ARTIFACTS_DIR, MODELS_DIR
 from datasets import load_dataset
-from transformers import GPT2Tokenizer, AutoTokenizer
+from src.model_utils import load_tokenizer
 
 
 def load_activations(
@@ -16,9 +16,7 @@ def load_activations(
     num_stories: int,
     story_idxs: Optional[List[int]] = None,
     omit_BOS_token: bool = False,
-    truncate_to_min_seq_length: bool = False,
-    truncate_seq_length: Optional[int] = None,
-) -> Tuple[Tensor, Tensor, Tensor, Optional[int]]:
+) -> Tuple[Tensor, Tensor, List[int]]:
     """
     Load activations and attention mask tensors for a given model and number of stories.
 
@@ -30,99 +28,25 @@ def load_activations(
         tuple: (activations tensor, attention mask tensor)
     """
     model_str = model_name.replace("/", "--")
+    
+    # Load indicies of stories in the full dataset
+    actual_story_idxs_fname = f"story_idxs_{model_str}_simple-stories_first-{num_stories}.pt"
+    actual_story_idxs_path = os.path.join(ARTIFACTS_DIR, actual_story_idxs_fname)
+    actual_story_idxs = torch.load(actual_story_idxs_path, weights_only=False)
+    
+    # Load activations
     acts_save_fname = f"activations_{model_str}_simple-stories_first-{num_stories}.pt"
-    mask_save_fname = f"mask_{model_str}_simple-stories_first-{num_stories}.pt"
-
     acts_path = os.path.join(ARTIFACTS_DIR, acts_save_fname)
-    mask_path = os.path.join(ARTIFACTS_DIR, mask_save_fname)
-
-    attention_mask_BP = torch.load(mask_path, weights_only=False).to("cpu")
     activations_LBPD = torch.load(acts_path, weights_only=False).to("cpu")
 
     if story_idxs is not None:
+        actual_story_idxs = actual_story_idxs[story_idxs]
         activations_LBPD = activations_LBPD[:, story_idxs, :, :]
-        attention_mask_BP = attention_mask_BP[story_idxs, :]
 
     if omit_BOS_token:
         activations_LBPD = activations_LBPD[:, :, 1:, :]
-        attention_mask_BP = attention_mask_BP[:, 1:]
 
-    if truncate_seq_length is not None:
-        activations_LBPD = activations_LBPD[:, :, :truncate_seq_length, :]
-        attention_mask_BP = attention_mask_BP[:, :truncate_seq_length]
-
-    if truncate_to_min_seq_length:
-        assert truncate_seq_length is None, "Either truncate_seq_length or truncate_to_min_seq_length can be passed, not both."
-        min_seq_length = None
-        min_seq_length = min(attention_mask_BP.sum(dim=-1))
-        print(f"truncating to minimum sequence length of {min_seq_length}")
-        activations_LBPD = activations_LBPD[:, :, :min_seq_length, :]
-        attention_mask_BP = attention_mask_BP[:, :min_seq_length]
-        assert torch.all(
-            attention_mask_BP == 1
-        ), "Attention mask should be all ones after truncation"
-
-    # Reshape activations to [L, B*P, D] and mask to [B*P]
-    L, B, P, D = activations_LBPD.shape
-    activations_LbD = activations_LBPD.reshape(L, B * P, D)
-    attention_mask_b = attention_mask_BP.reshape(B * P)
-
-    # Create a mask for valid positions (where attention_mask == 1)
-    valid_positions = attention_mask_b == 1
-    activations_LbD = activations_LbD[:, valid_positions, :]
-
-    return activations_LbD, activations_LBPD, attention_mask_BP
-
-
-def load_mask_only(
-    model_name: str,
-    num_stories: int,
-    story_idxs: Optional[List[int]] = None,
-    omit_BOS_token: bool = True,
-    max_tokens_per_story: Optional[int] = None,
-    truncate_seq_length: bool = False,
-) -> Tuple[Tensor, Optional[int]]:
-    """
-    Load and preprocess only the attention mask for the specified stories.
-
-    Args:
-        model_name: Name of the model
-        num_stories: Number of stories to load
-        story_idxs: Optional list of story indices to load
-        omit_BOS_token: Whether to omit the BOS token
-        max_tokens_per_story: Optional maximum number of tokens per story
-        truncate_seq_length: Whether to truncate to minimum sequence length
-
-    Returns:
-        Tuple containing:
-        - attention_mask_BP: Attention mask tensor [B, P]
-        - min_seq_length: Minimum sequence length if truncate_seq_length is True, None otherwise
-    """
-    model_str = model_name.replace("/", "--")
-    mask_save_fname = f"mask_{model_str}_simple-stories_first-{num_stories}.pt"
-    mask_path = os.path.join(ARTIFACTS_DIR, mask_save_fname)
-
-    attention_mask_BP = torch.load(mask_path, weights_only=False).to("cpu")
-
-    if story_idxs is not None:
-        attention_mask_BP = attention_mask_BP[story_idxs, :]
-
-    if omit_BOS_token:
-        attention_mask_BP = attention_mask_BP[:, 1:]
-
-    if max_tokens_per_story is not None:
-        attention_mask_BP = attention_mask_BP[:, :max_tokens_per_story]
-
-    min_seq_length = None
-    if truncate_seq_length:
-        min_seq_length = min(attention_mask_BP.sum(dim=-1))
-        print(f"truncating to minimum sequence length of {min_seq_length}")
-        attention_mask_BP = attention_mask_BP[:, :min_seq_length]
-        assert torch.all(
-            attention_mask_BP == 1
-        ), "Attention mask should be all ones after truncation"
-
-    return attention_mask_BP, min_seq_length
+    return activations_LBPD, actual_story_idxs
 
 
 def save_svd_results(
@@ -213,8 +137,75 @@ def load_svd_results(
         return None
 
 
-def compute_or_load_svd(
+def compute_svd(
     act_LbD: Tensor,
+    layer_idx: Optional[int] = None,
+) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    """
+    Compute SVD for a given layer of activations.
+    """
+
+    # Compute SVD layer by layer on GPU for efficiency and memory management
+    if layer_idx is not None:
+        print(f"Computing SVD for single layer {layer_idx} with proper centering...")
+    else:
+        print("Computing SVD layer by layer with proper centering...")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    L, b, D = act_LbD.shape
+    C = min(b, D)  # Number of components
+
+    # Determine which layers to process
+    if layer_idx is not None:
+        # Validate layer_idx
+        if layer_idx < 0 or layer_idx >= L:
+            raise ValueError(f"layer_idx {layer_idx} out of range [0, {L-1}]")
+        layers_to_process = [layer_idx]
+        # Initialize tensors with singleton L dimension for single layer
+        U_LbC = torch.zeros(1, b, C)
+        S_LC = torch.zeros(1, C)
+        Vt_LCD = torch.zeros(1, C, D)
+        means_LD = torch.zeros(1, D)
+    else: # All layers, starting at 0
+        layers_to_process = list(range(L))
+        # Initialize tensors with full L dimension for all layers
+        U_LbC = torch.zeros(L, b, C)
+        S_LC = torch.zeros(L, C)
+        Vt_LCD = torch.zeros(L, C, D)
+        means_LD = torch.zeros(L, D)
+
+    # Process each layer
+    for i in trange(len(layers_to_process), desc="Computing SVD per layer"):
+        actual_layer = layers_to_process[i]
+        print(f"{i}. computing SVD for layer {actual_layer}")
+        act_bD = act_LbD[actual_layer].to(device)
+
+        # Center the data before SVD (proper PCA)
+        mean_D = torch.mean(act_bD, dim=0, keepdim=True)
+        act_centered_bD = act_bD - mean_D
+
+        # Compute SVD
+        U_layer, S_layer, Vt_layer = torch.linalg.svd(
+            act_centered_bD, full_matrices=False
+        )
+
+        # Store results
+        U_LbC[i] = U_layer.cpu()
+        S_LC[i] = S_layer.cpu()
+        Vt_LCD[i] = Vt_layer.cpu()
+        means_LD[i] = mean_D.cpu()
+
+        # Clear GPU memory after each layer
+        del act_bD, mean_D, act_centered_bD, U_layer, S_layer, Vt_layer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    return U_LbC, S_LC, Vt_LCD, means_LD
+
+
+def compute_or_load_svd(
+    act_LBPD: Tensor,
     model_name: str,
     num_stories: int,
     force_recompute: bool = False,
@@ -239,61 +230,11 @@ def compute_or_load_svd(
         if svd_results is not None and svd_results[3] is not None:
             return svd_results
 
-    # Compute SVD layer by layer on GPU for efficiency and memory management
-    if layer_idx is not None:
-        print(f"Computing SVD for single layer {layer_idx} with proper centering...")
-    else:
-        print("Computing SVD layer by layer with proper centering...")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    # Reshape activations to [L, B*P, D]
+    L, B, P, D = act_LBPD.shape
+    act_LbD = act_LBPD.reshape(L, B * P, D)
 
-    L, b, D = act_LbD.shape
-    C = min(b, D)  # Number of components
-
-    # Determine which layers to process
-    if layer_idx is not None:
-        # Validate layer_idx
-        if layer_idx < 0 or layer_idx >= L:
-            raise ValueError(f"layer_idx {layer_idx} out of range [0, {L-1}]")
-        layers_to_process = [layer_idx]
-        # Initialize tensors with singleton L dimension for single layer
-        U_LbC = torch.zeros(1, b, C)
-        S_LC = torch.zeros(1, C)
-        Vt_LCD = torch.zeros(1, C, D)
-        means_LD = torch.zeros(1, D)
-    else:
-        layers_to_process = list(range(L))
-        # Initialize tensors with full L dimension for all layers
-        U_LbC = torch.zeros(L, b, C)
-        S_LC = torch.zeros(L, C)
-        Vt_LCD = torch.zeros(L, C, D)
-        means_LD = torch.zeros(L, D)
-
-    # Process each layer
-    for i in trange(len(layers_to_process), desc="Computing SVD per layer"):
-        actual_layer = layers_to_process[i]
-        print(f'{i}. computing SVD for layer {actual_layer}')
-        act_bD = act_LbD[actual_layer].to(device) 
-
-        # Center the data before SVD (proper PCA)
-        mean_D = torch.mean(act_bD, dim=0, keepdim=True)
-        act_centered_bD = act_bD - mean_D
-
-        # Compute SVD
-        U_layer, S_layer, Vt_layer = torch.linalg.svd(
-            act_centered_bD, full_matrices=False
-        )
-
-        # Store results
-        U_LbC[i] = U_layer.cpu()
-        S_LC[i] = S_layer.cpu()
-        Vt_LCD[i] = Vt_layer.cpu()
-        means_LD[i] = mean_D.cpu()
-
-        # Clear GPU memory after each layer
-        del act_bD, mean_D, act_centered_bD, U_layer, S_layer, Vt_layer
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+    U_LbC, S_LC, Vt_LCD, means_LD = compute_svd(act_LbD, layer_idx)
 
     # Save the results
     save_svd_results(U_LbC, S_LC, Vt_LCD, means_LD, model_name, num_stories, layer_idx)
@@ -302,45 +243,43 @@ def compute_or_load_svd(
 
 
 def load_tokens_of_story(
+    dataset_name: str,
     story_idx: int,
     model_name: str,
     omit_BOS_token: bool = False,
     seq_length: Optional[int] = None,
-    max_tokens_per_story: Optional[int] = None,
 ) -> List[str]:
-    dname = "SimpleStories/SimpleStories"
-    all_stories = load_dataset(path=dname, cache_dir=MODELS_DIR)["train"]
-    story_str = all_stories[story_idx]["story"]
+    """
+    Load tokens for a single story.
 
-    if "gpt2" in model_name:
-        # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
-        tokenizer = GPT2Tokenizer.from_pretrained(model_name, cache_dir=MODELS_DIR)
-        tokenizer.add_bos_token = True
-        tokenizer.pad_token = tokenizer.eos_token
-    elif "Llama" in model_name:
-        tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=MODELS_DIR)
-        tokenizer.pad_token = tokenizer.eos_token
-    else:
-        raise ValueError(f"Unknown model: {model_name}")
+    Args:
+        story_idx: Index of the story to load
+        model_name: Name of the model to determine the tokenizer
+        omit_BOS_token: Whether to omit the beginning-of-sequence (BOS) token
+        seq_length: Optional sequence length to truncate or pad tokens
 
-    token_ids_L = tokenizer(
-        story_str,
-        padding=True,
-        padding_side="right",
-        truncation=False,
-    ).input_ids
+    Returns:
+        A list of tokens for the specified story.
+    """
+    tokenizer = load_tokenizer(model_name, MODELS_DIR)
+    all_stories = load_dataset(path=dataset_name, cache_dir=MODELS_DIR)["train"]
+
+    story = all_stories[story_idx]["story"]
+    token_ids = tokenizer.encode(story)
+    tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in token_ids]
 
     if omit_BOS_token:
-        token_ids_L = token_ids_L[1:]
+        # GPT2 doesn't add a BOS token, but other models like Llama do.
+        # It's safer to check if the first token is a BOS token before removing it.
+        if tokens and tokenizer.bos_token and tokens[0] == tokenizer.bos_token:
+            tokens = tokens[1:]
+        elif tokens and tokens[0] == "<s>":
+            tokens = tokens[1:]
 
     if seq_length is not None:
-        token_ids_L = token_ids_L[:seq_length]
+        tokens = tokens[:seq_length]
 
-    if max_tokens_per_story is not None:
-        token_ids_L = token_ids_L[:max_tokens_per_story]
-
-    token_str_L = [tokenizer.decode(t, skip_special_tokens=False) for t in token_ids_L]
-    return token_str_L
+    return tokens
 
 
 def load_tokens_of_stories(
@@ -348,16 +287,13 @@ def load_tokens_of_stories(
     model_name: str,
     omit_BOS_token: bool = False,
     seq_length: Optional[int] = None,
-    max_tokens_per_story: Optional[int] = None,
 ) -> List[List[str]]:
-    tokens = []
+    tokens_of_stories = []
     for story_idx in story_idxs:
-        tokens.append(
-            load_tokens_of_story(
-                story_idx, model_name, omit_BOS_token, seq_length, max_tokens_per_story
-            )
+        tokens_of_stories.append(
+            load_tokens_of_story(story_idx, model_name, omit_BOS_token, seq_length)
         )
-    return tokens
+    return tokens_of_stories
 
 
 def save_sae_results(
@@ -486,64 +422,59 @@ def compute_or_load_sae(
     device: str = "cuda",
     force_recompute: bool = False,
     do_omit_BOS_token: bool = True,
-    do_truncate_seq_length: bool = False,
-    max_tokens_per_story: Optional[int] = None,
 ) -> Tuple[Tensor, Tensor, Tensor]:
     """
-    Compute SAE activations or load from disk if available.
+    Compute or load SAE results for a given model, layer, and number of stories.
 
     Args:
-        sae: The SAE model
-        act_BPD: Activations tensor [B, P, D]
-        model_name: Name of the model
-        num_stories: Number of stories used
-        sae_name: Name of the SAE
-        layer_idx: Layer index
-        batch_size: Batch size for processing
-        device: Device to use for computation
-        force_recompute: If True, recompute SAE even if saved results exist
+        sae_name: Name of the SAE model to load.
+        model_name: Name of the model (e.g., "openai-community/gpt2").
+        num_stories: Number of stories used for activations.
+        layer_idx: Index of the layer to get activations from.
+        batch_size: Batch size for SAE forward pass.
+        device: Device to run computation on.
+        force_recompute: If True, recompute SAE results even if they exist.
+        do_omit_BOS_token: Whether to omit the BOS token from activations.
 
     Returns:
-        tuple: (fvu_BP, latent_acts_BPS, latent_indices_BPK)
+        Tuple containing:
+        - fvu_BP: Frame variance unexplained tensor.
+        - latent_acts_BPS: Latent activations tensor.
+        - latent_indices_BPK: Latent indices tensor.
     """
-    if not force_recompute:
-        # Try to load existing SAE results
-        sae_results = load_sae_results(model_name, num_stories, sae_name, layer_idx)
-        if sae_results is not None:
-            fvu_BP, latent_acts_BPS, latent_indices_BPK = sae_results
-            mask_BP, _ = load_mask_only(
-                model_name,
-                num_stories,
-                story_idxs=None,
-                omit_BOS_token=do_omit_BOS_token,
-                truncate_seq_length=do_truncate_seq_length,
-                max_tokens_per_story=max_tokens_per_story,
-            )
-            return fvu_BP, latent_acts_BPS, latent_indices_BPK, mask_BP
-
-    _, act_LBPD, mask_BP, _ = load_activations(
-        model_name,
-        num_stories,
-        story_idxs=None,
-        omit_BOS_token=do_omit_BOS_token,
-        truncate_to_min_seq_length=do_truncate_seq_length,
-        truncate_seq_length=max_tokens_per_story,
-    )
-    act_BPD = act_LBPD[layer_idx]
-
-    sae = Sae.load_from_hub(sae_name, hookpoint=f"layers.{layer_idx}")
-    sae = sae.to(device)
-    print(sae.cfg)
-
-    # Compute SAE activations
-    print("Computing SAE activations...")
-    fvu, latent_acts, latent_indices = batch_sae_forward(
-        sae, act_BPD, batch_size, device
+    sae_results_exist = (
+        load_sae_results(model_name, num_stories, sae_name, layer_idx) is not None
     )
 
-    # Save the results
-    save_sae_results(
-        fvu, latent_acts, latent_indices, model_name, num_stories, sae_name, layer_idx
-    )
+    if force_recompute or not sae_results_exist:
+        _, act_LBPD = load_activations(
+            model_name=model_name,
+            num_stories=num_stories,
+            story_idxs=None,
+            omit_BOS_token=do_omit_BOS_token,
+        )
+        act_BPD = act_LBPD[layer_idx]
 
-    return fvu, latent_acts, latent_indices, mask_BP
+        sae_path = os.path.join(MODELS_DIR, f"{sae_name}.pt")
+        sae = Sae.load_from_pretrained(sae_path)
+        sae = sae.to(device)
+
+        fvu_BP, latent_acts_BPS, latent_indices_BPK = batch_sae_forward(
+            sae, act_BPD, batch_size, device
+        )
+
+        save_sae_results(
+            fvu_BP,
+            latent_acts_BPS,
+            latent_indices_BPK,
+            model_name,
+            num_stories,
+            sae_name,
+            layer_idx,
+        )
+    else:
+        fvu_BP, latent_acts_BPS, latent_indices_BPK = load_sae_results(
+            model_name, num_stories, sae_name, layer_idx
+        )
+
+    return fvu_BP, latent_acts_BPS, latent_indices_BPK

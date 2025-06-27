@@ -4,9 +4,23 @@ from typing import Optional
 import torch
 from transformers import (
     AutoTokenizer,
+    GPT2Tokenizer,
     AutoModelForCausalLM,
     BitsAndBytesConfig,
 )
+from src.project_config import MODELS_DIR
+
+def load_tokenizer(model_name: str, cache_dir: str):
+    if "gpt2" in model_name:
+        tokenizer = GPT2Tokenizer.from_pretrained(
+            model_name, cache_dir=MODELS_DIR
+        )
+        tokenizer.add_bos_token = True
+        tokenizer.pad_token = tokenizer.eos_token
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+
+    return tokenizer
 
 
 def load_model(
@@ -34,7 +48,7 @@ def load_model(
             print(f"Model does not exist in {local_path}")
 
     # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+    tokenizer = load_tokenizer(model_name, cache_dir)
     if tokenizer_only:
         return tokenizer
 

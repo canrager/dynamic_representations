@@ -1,6 +1,6 @@
 import os
 import torch
-from src.model_utils import load_model
+from src.model_utils import load_model, load_tokenizer
 from src.project_config import DEVICE, MODELS_DIR, ARTIFACTS_DIR
 from datasets import load_dataset
 from nnsight import LanguageModel
@@ -49,6 +49,7 @@ def batch_act_cache(
     all_acts_LBPD = all_acts_LBPD.to("cpu")
     return all_acts_LBPD
 
+
 def collect_stories(dname, num_stories, num_tokens):
     # Use stories with the same amounts of tokens
     # For equal weighting across position and avoiding padding errors
@@ -74,16 +75,17 @@ def collect_stories(dname, num_stories, num_tokens):
 
     return inputs_BP, selected_story_idxs
 
+
 if __name__ == "__main__":
     # Define necessary inputs for batch_act_cache
     num_stories = 100
     num_tokens = 300
-    batch_size = 10
+    batch_size = 20
     dname = "SimpleStories/SimpleStories"
     device = DEVICE
 
-    model_name = "openai-community/gpt2" # 10 batches take 1 second on A600
-    # model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
+    # model_name = "openai-community/gpt2" # 10 batches take 1 second on A600
+    model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
     # model_name = "google/gemma-3-12b-pt"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
@@ -103,11 +105,7 @@ if __name__ == "__main__":
         submodules = [model.transformer.h[l] for l in range(model.config.n_layer)]
 
         # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
-        model.tokenizer = GPT2Tokenizer.from_pretrained(
-            model_name, cache_dir=MODELS_DIR
-        )
-        model.tokenizer.add_bos_token = True
-        model.tokenizer.pad_token = model.tokenizer.eos_token
+        model.tokenizer = load_tokenizer(model_name)
 
     elif "Llama" in model_name:
         print(model)
