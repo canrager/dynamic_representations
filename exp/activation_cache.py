@@ -49,6 +49,30 @@ def batch_act_cache(
     all_acts_LBPD = all_acts_LBPD.to("cpu")
     return all_acts_LBPD
 
+def collect_stories(dname, num_stories, num_tokens):
+    # Use stories with the same amounts of tokens
+    # For equal weighting across position and avoiding padding errors
+    # NOTE: exact tokenization varies by model, therefore, it can be that different models see different stories
+
+    all_stories = load_dataset(path=dname, cache_dir=MODELS_DIR)["train"]
+
+    inputs_BP = []
+    selected_story_idxs = []
+
+    for story_idx, story_item in enumerate(all_stories):
+        if len(inputs_BP) >= num_stories:
+            break
+
+        story_text = story_item["story"]
+        input_ids_P = model.tokenizer(story_text, return_tensors="pt").input_ids
+
+        if input_ids_P.shape[1] >= num_tokens:
+            inputs_BP.append(input_ids_P[0, :num_tokens])
+            selected_story_idxs.append(story_idx)
+
+    inputs_BP = torch.stack(inputs_BP)
+
+    return inputs_BP, selected_story_idxs
 
 if __name__ == "__main__":
     # Define necessary inputs for batch_act_cache
@@ -63,9 +87,6 @@ if __name__ == "__main__":
     # model_name = "google/gemma-3-12b-pt"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
-
-    # Load dataset
-    all_stories = load_dataset(path=dname, cache_dir=MODELS_DIR)["train"]
 
     # Load model
     model = LanguageModel(
@@ -96,34 +117,8 @@ if __name__ == "__main__":
             model.model.layers[l] for l in range(model.config.num_hidden_layers)
         ]
 
-    # Prepare inputs
-    # inputs_bL = model.tokenizer(
-    #     stories,
-    #     padding=True,
-    #     padding_side="right",
-    #     truncation=False,
-    #     return_tensors="pt",
-    # ).to(device)
-
-    # Use stories with the same amounts of tokens
-    # For equal weighting across position and avoiding padding errors
-    # NOTE: exact tokenization varies by model, therefore, it can be that different models see different stories
-
-    inputs_BP = []
-    selected_story_idxs = []
-
-    for story_idx, story_item in enumerate(all_stories):
-        if len(inputs_BP) >= num_stories:
-            break
-
-        story_text = story_item["story"]
-        input_ids_P = model.tokenizer(story_text, return_tensors="pt").input_ids
-
-        if input_ids_P.shape[1] >= num_tokens:
-            inputs_BP.append(input_ids_P[0, :num_tokens])
-            selected_story_idxs.append(story_idx)
-
-    inputs_BP = torch.stack(inputs_BP)
+    # Load dataset
+    inputs_BP, selected_story_idxs = collect_stories(dname, num_stories, num_tokens)
 
     # Call batch_act_cache
     all_acts_LbPD = batch_act_cache(
