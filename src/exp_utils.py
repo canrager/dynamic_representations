@@ -6,7 +6,7 @@ from torch import Tensor
 from tqdm import trange
 from sparsify import Sae
 
-from src.project_config import ARTIFACTS_DIR, MODELS_DIR
+from src.project_config import INTERIM_DIR, MODELS_DIR
 from datasets import load_dataset
 from src.model_utils import load_tokenizer
 
@@ -16,6 +16,7 @@ def load_activations(
     num_stories: int,
     story_idxs: Optional[List[int]] = None,
     omit_BOS_token: bool = False,
+    dataset_name: str = "SimpleStories/SimpleStories",
 ) -> Tuple[Tensor, Tensor, List[int]]:
     """
     Load activations and attention mask tensors for a given model and number of stories.
@@ -28,15 +29,21 @@ def load_activations(
         tuple: (activations tensor, attention mask tensor)
     """
     model_str = model_name.replace("/", "--")
+    dataset_str = dataset_name.split("/")[-1].split(".")[0]
     
     # Load indicies of stories in the full dataset
-    actual_story_idxs_fname = f"story_idxs_{model_str}_simple-stories_first-{num_stories}.pt"
-    actual_story_idxs_path = os.path.join(ARTIFACTS_DIR, actual_story_idxs_fname)
+    actual_story_idxs_fname = f"story_idxs_{model_str}_{dataset_str}_samples{num_stories}.pt"
+    actual_story_idxs_path = os.path.join(INTERIM_DIR, actual_story_idxs_fname)
     actual_story_idxs = torch.load(actual_story_idxs_path, weights_only=False)
+
+    # Load tokens of stories
+    tokens_save_fname = f"tokens_{model_str}_{dataset_str}_samples{num_stories}.pt"
+    tokens_path = os.path.join(INTERIM_DIR, tokens_save_fname)
+    tokens_BP = torch.load(tokens_path, weights_only=False)
     
     # Load activations
-    acts_save_fname = f"activations_{model_str}_simple-stories_first-{num_stories}.pt"
-    acts_path = os.path.join(ARTIFACTS_DIR, acts_save_fname)
+    acts_save_fname = f"activations_{model_str}_{dataset_str}_samples{num_stories}.pt"
+    acts_path = os.path.join(INTERIM_DIR, acts_save_fname)
     activations_LBPD = torch.load(acts_path, weights_only=False).to("cpu")
 
     if story_idxs is not None:
@@ -46,7 +53,7 @@ def load_activations(
     if omit_BOS_token:
         activations_LBPD = activations_LBPD[:, :, 1:, :]
 
-    return activations_LBPD, actual_story_idxs
+    return activations_LBPD, actual_story_idxs, tokens_BP
 
 
 def save_svd_results(
@@ -55,6 +62,7 @@ def save_svd_results(
     Vt_LCD: Tensor,
     means_LD: Tensor,
     model_name: str,
+    dataset_name: str,
     num_stories: int,
     layer_idx: Optional[int] = None,
 ) -> None:
@@ -67,17 +75,19 @@ def save_svd_results(
         Vt_LCD: Right singular vectors tensor [L, C, D]
         means_LD: Mean values used for centering [L, D]
         model_name: Name of the model
+        dataset_name: Name of the dataset
         num_stories: Number of stories used
         layer_idx: Optional layer index for single-layer SVD
     """
     model_str = model_name.replace("/", "--")
+    dataset_str = dataset_name.split("/")[-1].split(".")[0]
     if layer_idx is not None:
         svd_save_fname = (
-            f"svd_{model_str}_simple-stories_first-{num_stories}_layer-{layer_idx}.pt"
+            f"svd_{model_str}_{dataset_str}_first-{num_stories}_layer-{layer_idx}.pt"
         )
     else:
-        svd_save_fname = f"svd_{model_str}_simple-stories_first-{num_stories}.pt"
-    svd_path = os.path.join(ARTIFACTS_DIR, svd_save_fname)
+        svd_save_fname = f"svd_{model_str}_{dataset_str}_first-{num_stories}.pt"
+    svd_path = os.path.join(INTERIM_DIR, svd_save_fname)
 
     svd_data = {
         "U": U_LbC,
@@ -85,6 +95,7 @@ def save_svd_results(
         "Vt": Vt_LCD,
         "means": means_LD,
         "model_name": model_name,
+        "dataset_name": dataset_name,
         "num_stories": num_stories,
         "layer_idx": layer_idx,
     }
@@ -94,13 +105,14 @@ def save_svd_results(
 
 
 def load_svd_results(
-    model_name: str, num_stories: int, layer_idx: Optional[int] = None
+    model_name: str, dataset_name: str, num_stories: int, layer_idx: Optional[int] = None
 ) -> Optional[Tuple[Tensor, Tensor, Tensor, Tensor]]:
     """
     Load SVD results from disk if they exist.
 
     Args:
         model_name: Name of the model
+        dataset_name: Name of the dataset
         num_stories: Number of stories used
         layer_idx: Optional layer index for single-layer SVD
 
@@ -108,13 +120,14 @@ def load_svd_results(
         tuple: (U_LbC, S_LC, Vt_LCD, means_LD) if file exists, None otherwise
     """
     model_str = model_name.replace("/", "--")
+    dataset_str = dataset_name.split("/")[-1].split(".")[0]
     if layer_idx is not None:
         svd_save_fname = (
-            f"svd_{model_str}_simple-stories_first-{num_stories}_layer-{layer_idx}.pt"
+            f"svd_{model_str}_{dataset_str}_first-{num_stories}_layer-{layer_idx}.pt"
         )
     else:
-        svd_save_fname = f"svd_{model_str}_simple-stories_first-{num_stories}.pt"
-    svd_path = os.path.join(ARTIFACTS_DIR, svd_save_fname)
+        svd_save_fname = f"svd_{model_str}_{dataset_str}_first-{num_stories}.pt"
+    svd_path = os.path.join(INTERIM_DIR, svd_save_fname)
 
     if os.path.exists(svd_path):
         try:
@@ -207,6 +220,7 @@ def compute_svd(
 def compute_or_load_svd(
     act_LBPD: Tensor,
     model_name: str,
+    dataset_name: str,
     num_stories: int,
     force_recompute: bool = False,
     layer_idx: Optional[int] = None,
@@ -217,6 +231,7 @@ def compute_or_load_svd(
     Args:
         act_LbD: Activations tensor [L, b, D]
         model_name: Name of the model
+        dataset_name: Name of the dataset
         num_stories: Number of stories used
         force_recompute: If True, recompute SVD even if saved results exist
         layer_idx: Optional layer index to compute SVD for single layer only
@@ -226,7 +241,7 @@ def compute_or_load_svd(
     """
     if not force_recompute:
         # Try to load existing SVD results
-        svd_results = load_svd_results(model_name, num_stories, layer_idx)
+        svd_results = load_svd_results(model_name, dataset_name, num_stories, layer_idx)
         if svd_results is not None and svd_results[3] is not None:
             return svd_results
 
@@ -237,7 +252,7 @@ def compute_or_load_svd(
     U_LbC, S_LC, Vt_LCD, means_LD = compute_svd(act_LbD, layer_idx)
 
     # Save the results
-    save_svd_results(U_LbC, S_LC, Vt_LCD, means_LD, model_name, num_stories, layer_idx)
+    save_svd_results(U_LbC, S_LC, Vt_LCD, means_LD, model_name, dataset_name, num_stories, layer_idx)
 
     return U_LbC, S_LC, Vt_LCD, means_LD
 
@@ -320,7 +335,7 @@ def save_sae_results(
     model_str = model_name.replace("/", "--")
     sae_str = sae_name.replace("/", "--")
     sae_save_fname = f"sae_{model_str}_{sae_str}_layer-{layer_idx}_simple-stories_first-{num_stories}.pt"
-    sae_path = os.path.join(ARTIFACTS_DIR, sae_save_fname)
+    sae_path = os.path.join(INTERIM_DIR, sae_save_fname)
 
     sae_data = {
         "fvu": fvu_BP,
@@ -354,7 +369,7 @@ def load_sae_results(
     model_str = model_name.replace("/", "--")
     sae_str = sae_name.replace("/", "--")
     sae_save_fname = f"sae_{model_str}_{sae_str}_layer-{layer_idx}_simple-stories_first-{num_stories}.pt"
-    sae_path = os.path.join(ARTIFACTS_DIR, sae_save_fname)
+    sae_path = os.path.join(INTERIM_DIR, sae_save_fname)
 
     if os.path.exists(sae_path):
         try:

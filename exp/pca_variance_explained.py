@@ -3,7 +3,7 @@ import torch
 from typing import Optional, List
 import matplotlib.pyplot as plt
 import einops
-from src.project_config import ARTIFACTS_DIR, DEVICE
+from src.project_config import PLOTS_DIR, DEVICE
 from src.exp_utils import compute_or_load_svd, load_tokens_of_story, load_activations
 
 
@@ -13,14 +13,15 @@ def plot_num_components_required_to_reconstruct(
     layer_idx,
     reconstruction_thresholds,
     model_name,
-    dataset_name="SimpleStories/SimpleStories",
+    dataset_name,
 ):
     num_stories, num_tokens, _ = min_components_required_BPT.shape
 
     # Generate filename components
     thresholds_str = "_".join([str(t) for t in reconstruction_thresholds])
     model_str = model_name.split("/")[-1]
-    save_fname = f"num_components_required_to_reconstruct_model_{model_str}_reconstruction_thresholds_{thresholds_str}_layer_{layer_idx}"
+    dataset_str = dataset_name.split("/")[-1].split(".")[0]
+    save_fname = f"num_components_required_to_reconstruct_model_{model_str}_dataset_{dataset_str}_reconstruction_thresholds_{thresholds_str}_layer_{layer_idx}"
 
     fig, ax = plt.subplots(
         figsize=(50, 6)
@@ -56,12 +57,14 @@ def plot_num_components_required_to_reconstruct(
             axis="x", which="major", #pad=20
         )  # Increase spacing between labels
 
+        save_fname += f"_story_{story_idxs[0]}"
+
     plt.grid(True, linestyle="--", alpha=0.3)
 
     plt.tight_layout()
 
-    fig_path = os.path.join(ARTIFACTS_DIR, f"{save_fname}.png")
-    plt.savefig(fig_path, bbox_inches="tight")
+    fig_path = os.path.join(PLOTS_DIR, f"{save_fname}.png")
+    plt.savefig(fig_path, bbox_inches="tight", dpi=80)
     print(f"Saved figure to {fig_path}")
     plt.close()
 
@@ -71,6 +74,7 @@ def plot_mean_components_across_stories(
     layer_idx,
     reconstruction_thresholds,
     model_name,
+    dataset_name,
 ):
     """
     Plot mean number of PCA components required across all stories with 95% confidence intervals.
@@ -85,7 +89,8 @@ def plot_mean_components_across_stories(
     # Generate filename
     thresholds_str = "_".join([str(t) for t in reconstruction_thresholds])
     model_str = model_name.split("/")[-1]
-    save_fname = f"mean_components_across_stories_model_{model_str}_thresholds_{thresholds_str}_layer_{layer_idx}"
+    dataset_str = dataset_name.split("/")[-1].split(".")[0]
+    save_fname = f"mean_components_across_stories_model_{model_str}_dataset_{dataset_str}_thresholds_{thresholds_str}_layer_{layer_idx}"
 
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -128,8 +133,8 @@ def plot_mean_components_across_stories(
 
     plt.tight_layout()
 
-    fig_path = os.path.join(ARTIFACTS_DIR, f"{save_fname}.png")
-    plt.savefig(fig_path, dpi=150, bbox_inches="tight")
+    fig_path = os.path.join(PLOTS_DIR, f"{save_fname}.png")
+    plt.savefig(fig_path, dpi=80, bbox_inches="tight")
     print(f"Saved mean components across stories plot to {fig_path}")
     plt.close()
 
@@ -137,20 +142,23 @@ def plot_mean_components_across_stories(
 if __name__ == "__main__":
     ##### Parameters
 
-    # model_name = "openai-community/gpt2"
-    model_name = "meta-llama/Llama-3.1-8B"
+    model_name = "openai-community/gpt2"
+    # model_name = "meta-llama/Llama-3.1-8B"
     # model_name = "google/gemma-3-12b-pt"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
 
-    layer_idx = 12
+    # dataset_name = "SimpleStories/SimpleStories"
+    dataset_name = "simple_sentences.json"
+
+    layer_idx = 6
 
     num_total_stories = 100
 
     # Choose subset of stories for evaluation
     # These indices correspond to samples from the loaded activations,
     # which differ from the actual story indices in the dataset
-    # activation_story_idxs = [0, 3, 4, 7, 14]
+    # activation_story_idxs = [2]
     activation_story_idxs = list(range(100))
     # activation_story_idxs = [0]
 
@@ -163,16 +171,17 @@ if __name__ == "__main__":
 
     ##### Load activations and PCA (=centered SVD) results on full dataset of stories
 
-    act_LBPD, dataset_story_idxs = load_activations(
+    act_LBPD, dataset_story_idxs, tokens_BP = load_activations(
         model_name,
         num_total_stories,
         story_idxs=None,
         omit_BOS_token=omit_BOS_token,
+        dataset_name=dataset_name,
     )
     selected_dataset_story_idxs = [dataset_story_idxs[i] for i in activation_story_idxs]
 
     U_LbC, S_LC, Vt_LCD, means_LD = compute_or_load_svd(
-        act_LBPD, model_name, num_total_stories, force_recompute, layer_idx=layer_idx
+        act_LBPD, model_name, dataset_name, num_total_stories, force_recompute, layer_idx=layer_idx
     )
 
     Vt_CD = Vt_LCD[0].to(DEVICE)
@@ -221,6 +230,7 @@ if __name__ == "__main__":
         layer_idx,
         reconstruction_thresholds,
         model_name,
+        dataset_name,
     )
 
     # Plot mean components across stories
@@ -229,6 +239,7 @@ if __name__ == "__main__":
         layer_idx,
         reconstruction_thresholds,
         model_name,
+        dataset_name,
     )
 
     ##### Alternative approaches  to compute cumulative variance

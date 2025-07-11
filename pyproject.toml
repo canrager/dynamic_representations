@@ -12,7 +12,8 @@ dependencies = [
     "torch>=2.7.0",
     "datasets>=3.6.0",
     "nnsight>=0.4.6",
-    "matplotlib"
+    "matplotlib",
+    "zstandard"
 ]
 
 [build-system]
