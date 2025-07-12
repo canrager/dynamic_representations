@@ -7,6 +7,91 @@ from src.project_config import PLOTS_DIR, DEVICE
 from src.exp_utils import compute_or_load_svd, load_tokens_of_story, load_activations
 
 
+def compute_variance_explained_pca_over_all_tokens(
+    act_train_LBPD,
+    act_test_LBPD,
+    layer_idx,
+    reconstruction_thresholds,
+    model_name,
+):
+
+    ##### Compute variance of full representations
+
+    # Variance of full representations
+    story_BPD = act_test_LBPD[layer_idx, :, :, :].to(DEVICE)
+    mean_test_D = story_BPD.mean(dim=(0,1))
+    story_centered_BPD = (
+        story_BPD - mean_test_D
+    )  # Center the data wrt. test stories only
+    total_variance_BP = torch.sum(story_centered_BPD**2, dim=-1)
+
+    print(f"total_variance_BP.shape: {total_variance_BP.shape}")
+    print(f"total_variance_BP max: {total_variance_BP.max()}")
+    print(f"total_variance_BP min: {total_variance_BP.min()}")
+
+
+    ##### Compute PCA (=centered SVD) results on full dataset of stories
+
+    U_LbC, S_LC, Vt_LCD, means_LD = compute_or_load_svd(
+        act_train_LBPD,
+        model_name,
+        dataset_name,
+        num_total_stories,
+        force_recompute,
+        layer_idx=layer_idx,
+    )
+
+    Vt_CD = Vt_LCD[0].to(DEVICE)
+    num_components, hidden_dim = Vt_CD.shape
+
+    print(f"Vt_CD.shape: {Vt_CD.shape}")
+    print(f"Vt_CD max: {Vt_CD.max()}")
+    print(f"Vt_CD min: {Vt_CD.min()}")
+
+
+    ##### Compute variance explained by top-k PCA components
+
+    # Cumulative variance of top-k PCA components, per token
+    pca_coeffs_BPC = einops.einsum(
+        story_centered_BPD,
+        Vt_CD,
+        "b p d, c d -> b p c",
+    )
+    pca_variance_BPC = pca_coeffs_BPC**2
+    pca_cumulative_variance_BPC = torch.cumsum(pca_variance_BPC, dim=-1)
+
+    # Compute explained variance
+    explained_variance_cumulative_BPC = (
+        pca_cumulative_variance_BPC / total_variance_BP[:, :, None]
+    ).cpu()
+    print(
+        f"explained_variance_cumulative_BPC.shape: {explained_variance_cumulative_BPC.shape}"
+    )
+    print(
+        f"explained_variance_cumulative_BPC max: {explained_variance_cumulative_BPC.max()}"
+    )
+    print(
+        f"explained_variance_cumulative_BPC min: {explained_variance_cumulative_BPC.min()}"
+    )
+
+    # Find first k components that meet reconstruction_thresholds for explained variance
+    meets_threshold_BPCT = (
+        explained_variance_cumulative_BPC[:, :, :, None]
+        >= torch.tensor(reconstruction_thresholds)[None, None, None, :]
+    )
+    min_components_required_BPT = torch.argmax(meets_threshold_BPCT.int(), dim=-2)
+
+    # If no solution is found, set to max number of components
+    has_solution_BPT = torch.any(meets_threshold_BPCT, dim=-2)
+    min_components_required_BPT.masked_fill_(~has_solution_BPT, num_components)
+
+    print(f"min_components_required_BPT.shape: {min_components_required_BPT.shape}")
+    print(f"min_components_required_BPT max: {min_components_required_BPT.max()}")
+    print(f"min_components_required_BPT min: {min_components_required_BPT.min()}")
+
+    return min_components_required_BPT
+
+
 def plot_num_components_required_to_reconstruct(
     min_components_required_BPT,
     story_idxs,
@@ -194,80 +279,13 @@ if __name__ == "__main__":
         dataset_story_idxs[i] for i in test_idxs
     ]
 
-
-    ##### Compute variance of full representations
-
-    # Variance of full representations
-    story_BPD = act_test_LBPD[layer_idx, :, :, :].to(DEVICE)
-    mean_test_PD = story_BPD.mean(dim=0)
-    story_centered_BPD = (
-        story_BPD - mean_test_PD
-    )  # Center the data wrt. test stories only
-    total_variance_BP = torch.sum(story_centered_BPD**2, dim=-1)
-
-    print(f"total_variance_BP.shape: {total_variance_BP.shape}")
-    print(f"total_variance_BP max: {total_variance_BP.max()}")
-    print(f"total_variance_BP min: {total_variance_BP.min()}")
-
-
-    ##### Compute PCA (=centered SVD) results on full dataset of stories
-
-    U_LbC, S_LC, Vt_LCD, means_LD = compute_or_load_svd(
+    min_components_required_BPT = compute_variance_explained_pca_over_all_tokens(
         act_train_LBPD,
+        act_test_LBPD,
+        layer_idx,
+        reconstruction_thresholds,
         model_name,
-        dataset_name,
-        num_total_stories,
-        force_recompute,
-        layer_idx=layer_idx,
     )
-
-    Vt_CD = Vt_LCD[0].to(DEVICE)
-    num_components, hidden_dim = Vt_CD.shape
-
-    print(f"Vt_CD.shape: {Vt_CD.shape}")
-    print(f"Vt_CD max: {Vt_CD.max()}")
-    print(f"Vt_CD min: {Vt_CD.min()}")
-
-
-    ##### Compute variance explained by top-k PCA components
-
-    # Cumulative variance of top-k PCA components, per token
-    pca_coeffs_BPC = einops.einsum(
-        story_centered_BPD,
-        Vt_CD,
-        "b p d, c d -> b p c",
-    )
-    pca_variance_BPC = pca_coeffs_BPC**2
-    pca_cumulative_variance_BPC = torch.cumsum(pca_variance_BPC, dim=-1)
-
-    # Compute explained variance
-    explained_variance_cumulative_BPC = (
-        pca_cumulative_variance_BPC / total_variance_BP[:, :, None]
-    ).cpu()
-    print(
-        f"explained_variance_cumulative_BPC.shape: {explained_variance_cumulative_BPC.shape}"
-    )
-    print(
-        f"explained_variance_cumulative_BPC max: {explained_variance_cumulative_BPC.max()}"
-    )
-    print(
-        f"explained_variance_cumulative_BPC min: {explained_variance_cumulative_BPC.min()}"
-    )
-
-    # Find first k components that meet reconstruction_thresholds for explained variance
-    meets_threshold_BPCT = (
-        explained_variance_cumulative_BPC[:, :, :, None]
-        >= torch.tensor(reconstruction_thresholds)[None, None, None, :]
-    )
-    min_components_required_BPT = torch.argmax(meets_threshold_BPCT.int(), dim=-2)
-
-    # If no solution is found, set to max number of components
-    has_solution_BPT = torch.any(meets_threshold_BPCT, dim=-2)
-    min_components_required_BPT.masked_fill_(~has_solution_BPT, num_components)
-
-    print(f"min_components_required_BPT.shape: {min_components_required_BPT.shape}")
-    print(f"min_components_required_BPT max: {min_components_required_BPT.max()}")
-    print(f"min_components_required_BPT min: {min_components_required_BPT.min()}")
 
     ##### Plot results
 
