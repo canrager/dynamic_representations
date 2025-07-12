@@ -14,8 +14,8 @@ def plot_num_components_required_to_reconstruct(
     reconstruction_thresholds,
     model_name,
     dataset_name,
+    num_total_stories,
 ):
-    num_stories, num_tokens, _ = min_components_required_BPT.shape
 
     # Generate filename components
     thresholds_str = "_".join([str(t) for t in reconstruction_thresholds])
@@ -23,14 +23,16 @@ def plot_num_components_required_to_reconstruct(
     dataset_str = dataset_name.split("/")[-1].split(".")[0]
     save_fname = f"num_components_required_to_reconstruct_model_{model_str}_dataset_{dataset_str}_reconstruction_thresholds_{thresholds_str}_layer_{layer_idx}"
 
+    B, P, T = min_components_required_BPT.shape
+
     fig, ax = plt.subplots(
-        figsize=(50, 6)
+        figsize=(P, 6)
     )  # Increase figure width for better readability
-    for b in range(num_stories):
-        for t in range(len(reconstruction_thresholds)):
+    for b in range(B):
+        for t in range(T):
             ax.plot(
-                range(num_tokens),
-                min_components_required_BPT[b, :num_tokens, t],
+                range(P),
+                min_components_required_BPT[b, :, t],
                 label=f"Story {story_idxs[b]}, {reconstruction_thresholds[t]*100}% explained variance",
             )
 
@@ -45,16 +47,22 @@ def plot_num_components_required_to_reconstruct(
     # If only one story is provided, plot the tokens of the story
     if len(story_idxs) == 1:
         tokens_of_story = load_tokens_of_story(
-            dataset_name, story_idxs[0], model_name, omit_BOS_token, num_tokens
+            dataset_name,
+            num_total_stories,
+            story_idxs[0],
+            model_name,
+            omit_BOS_token,
+            P,
         )
         print(f"tokens_of_story: {"".join(tokens_of_story)}")
 
-        ax.set_xticks(range(num_tokens))
+        ax.set_xticks(range(P))
         ax.set_xticklabels(
             tokens_of_story, rotation=90, ha="right"
         )  # Rotate labels and align right
         ax.tick_params(
-            axis="x", which="major", #pad=20
+            axis="x",
+            which="major",  # pad=20
         )  # Increase spacing between labels
 
         save_fname += f"_story_{story_idxs[0]}"
@@ -142,34 +150,28 @@ def plot_mean_components_across_stories(
 if __name__ == "__main__":
     ##### Parameters
 
-    model_name = "openai-community/gpt2"
-    # model_name = "meta-llama/Llama-3.1-8B"
+    # model_name = "openai-community/gpt2"
+    model_name = "meta-llama/Llama-3.1-8B"
     # model_name = "google/gemma-3-12b-pt"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
+    layer_idx = 12
 
     # dataset_name = "SimpleStories/SimpleStories"
+    # dataset_name = "long_factual_sentences.json"
     dataset_name = "simple_sentences.json"
-
-    layer_idx = 6
-
     num_total_stories = 100
+    num_total_stories_train = 80
 
-    # Choose subset of stories for evaluation
-    # These indices correspond to samples from the loaded activations,
-    # which differ from the actual story indices in the dataset
-    # activation_story_idxs = [2]
-    activation_story_idxs = list(range(100))
-    # activation_story_idxs = [0]
-
-    reconstruction_thresholds = [0.8]
+    reconstruction_thresholds = [0.9]
+    test_len = num_total_stories - num_total_stories_train
     if len(reconstruction_thresholds) > 1:
-        assert len(activation_story_idxs) == 1
+        assert test_len == 1
 
     omit_BOS_token = False
     force_recompute = True
 
-    ##### Load activations and PCA (=centered SVD) results on full dataset of stories
+    ##### Load activations 
 
     act_LBPD, dataset_story_idxs, tokens_BP = load_activations(
         model_name,
@@ -178,24 +180,56 @@ if __name__ == "__main__":
         omit_BOS_token=omit_BOS_token,
         dataset_name=dataset_name,
     )
-    selected_dataset_story_idxs = [dataset_story_idxs[i] for i in activation_story_idxs]
+
+    # Do train-test split
+    rand_idxs = torch.randperm(num_total_stories)
+    train_idxs = rand_idxs[:num_total_stories_train]
+    test_idxs = rand_idxs[num_total_stories_train:]
+
+    act_train_LBPD = act_LBPD[:, train_idxs, :, :]
+    act_test_LBPD = act_LBPD[:, test_idxs, :, :]
+
+    tokens_test_BP = [tokens_BP[i] for i in test_idxs]
+    selected_dataset_idxs_test = [
+        dataset_story_idxs[i] for i in test_idxs
+    ]
+
+
+    ##### Compute variance of full representations
+
+    # Variance of full representations
+    story_BPD = act_test_LBPD[layer_idx, :, :, :].to(DEVICE)
+    mean_test_PD = story_BPD.mean(dim=0)
+    story_centered_BPD = (
+        story_BPD - mean_test_PD
+    )  # Center the data wrt. test stories only
+    total_variance_BP = torch.sum(story_centered_BPD**2, dim=-1)
+
+    print(f"total_variance_BP.shape: {total_variance_BP.shape}")
+    print(f"total_variance_BP max: {total_variance_BP.max()}")
+    print(f"total_variance_BP min: {total_variance_BP.min()}")
+
+
+    ##### Compute PCA (=centered SVD) results on full dataset of stories
 
     U_LbC, S_LC, Vt_LCD, means_LD = compute_or_load_svd(
-        act_LBPD, model_name, dataset_name, num_total_stories, force_recompute, layer_idx=layer_idx
+        act_train_LBPD,
+        model_name,
+        dataset_name,
+        num_total_stories,
+        force_recompute,
+        layer_idx=layer_idx,
     )
 
     Vt_CD = Vt_LCD[0].to(DEVICE)
-    mean_over_all_pos_D = means_LD[0].to(DEVICE)
     num_components, hidden_dim = Vt_CD.shape
 
-    ##### Compute variance explained by top-k PCA components
+    print(f"Vt_CD.shape: {Vt_CD.shape}")
+    print(f"Vt_CD max: {Vt_CD.max()}")
+    print(f"Vt_CD min: {Vt_CD.min()}")
 
-    # Variance of full representations
-    story_BPD = act_LBPD[layer_idx, activation_story_idxs, :, :].to(DEVICE)
-    story_centered_BPD = (
-        story_BPD - mean_over_all_pos_D
-    )  # Center the data wrt. all stories used for PCA
-    total_variance_BP = torch.sum(story_centered_BPD**2, dim=-1)
+
+    ##### Compute variance explained by top-k PCA components
 
     # Cumulative variance of top-k PCA components, per token
     pca_coeffs_BPC = einops.einsum(
@@ -210,6 +244,15 @@ if __name__ == "__main__":
     explained_variance_cumulative_BPC = (
         pca_cumulative_variance_BPC / total_variance_BP[:, :, None]
     ).cpu()
+    print(
+        f"explained_variance_cumulative_BPC.shape: {explained_variance_cumulative_BPC.shape}"
+    )
+    print(
+        f"explained_variance_cumulative_BPC max: {explained_variance_cumulative_BPC.max()}"
+    )
+    print(
+        f"explained_variance_cumulative_BPC min: {explained_variance_cumulative_BPC.min()}"
+    )
 
     # Find first k components that meet reconstruction_thresholds for explained variance
     meets_threshold_BPCT = (
@@ -222,25 +265,31 @@ if __name__ == "__main__":
     has_solution_BPT = torch.any(meets_threshold_BPCT, dim=-2)
     min_components_required_BPT.masked_fill_(~has_solution_BPT, num_components)
 
+    print(f"min_components_required_BPT.shape: {min_components_required_BPT.shape}")
+    print(f"min_components_required_BPT max: {min_components_required_BPT.max()}")
+    print(f"min_components_required_BPT min: {min_components_required_BPT.min()}")
+
     ##### Plot results
 
     plot_num_components_required_to_reconstruct(
-        min_components_required_BPT,
-        selected_dataset_story_idxs,
-        layer_idx,
-        reconstruction_thresholds,
-        model_name,
-        dataset_name,
+        min_components_required_BPT=min_components_required_BPT,
+        story_idxs=selected_dataset_idxs_test,
+        layer_idx=layer_idx,
+        reconstruction_thresholds=reconstruction_thresholds,
+        model_name=model_name,
+        dataset_name=dataset_name,
+        num_total_stories=num_total_stories_train,
     )
 
-    # Plot mean components across stories
-    plot_mean_components_across_stories(
-        min_components_required_BPT,
-        layer_idx,
-        reconstruction_thresholds,
-        model_name,
-        dataset_name,
-    )
+    if len(test_idxs) > 1:
+        # Plot mean components across stories
+        plot_mean_components_across_stories(
+            min_components_required_BPT,
+            layer_idx,
+            reconstruction_thresholds,
+            model_name,
+            dataset_name,
+        )
 
     ##### Alternative approaches  to compute cumulative variance
 

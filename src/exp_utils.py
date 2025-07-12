@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Tuple, Optional, List
 
 import torch
@@ -6,8 +7,7 @@ from torch import Tensor
 from tqdm import trange
 from sparsify import Sae
 
-from src.project_config import INTERIM_DIR, MODELS_DIR
-from datasets import load_dataset
+from src.project_config import INTERIM_DIR, MODELS_DIR, INPUTS_DIR
 from src.model_utils import load_tokenizer
 
 
@@ -259,6 +259,7 @@ def compute_or_load_svd(
 
 def load_tokens_of_story(
     dataset_name: str,
+    dataset_num_stories: int,
     story_idx: int,
     model_name: str,
     omit_BOS_token: bool = False,
@@ -277,11 +278,11 @@ def load_tokens_of_story(
         A list of tokens for the specified story.
     """
     tokenizer = load_tokenizer(model_name, MODELS_DIR)
-    all_stories = load_dataset(path=dataset_name, cache_dir=MODELS_DIR)["train"]
-
-    story = all_stories[story_idx]["story"]
-    token_ids = tokenizer.encode(story)
-    tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in token_ids]
+    model_str = model_name.replace("/", "--")
+    dataset_str = dataset_name.split("/")[-1].split(".")[0]
+    tokens_fname = f"tokens_{model_str}_{dataset_str}_samples{dataset_num_stories}.pt"
+    inputs_BP = torch.load(os.path.join(INTERIM_DIR, tokens_fname), weights_only=False)
+    tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in inputs_BP[story_idx]]
 
     if omit_BOS_token:
         # GPT2 doesn't add a BOS token, but other models like Llama do.

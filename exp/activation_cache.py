@@ -1,15 +1,16 @@
 import os
 import torch
 import json
-from src.model_utils import load_model, load_tokenizer
-from src.project_config import DEVICE, MODELS_DIR, INTERIM_DIR, INPUTS_DIR
-from datasets import load_dataset
 from nnsight import LanguageModel
 from tqdm import trange
 from typing import List
 from torch import Tensor
 from torch.nn import Module
 from transformers import BatchEncoding
+from datasets import load_dataset
+
+from src.model_utils import load_tokenizer
+from src.project_config import DEVICE, MODELS_DIR, INTERIM_DIR, INPUTS_DIR
 
 
 def batch_act_cache(
@@ -51,12 +52,12 @@ def batch_act_cache(
     return all_acts_LBPD
 
 
-def collect_stories(tokenizer, dname, num_stories, num_tokens):
+def collect_stories(tokenizer, dataset_name, num_stories, num_tokens):
     # Use stories with the same amounts of tokens
     # For equal weighting across position and avoiding padding errors
     # NOTE: exact tokenization varies by model, therefore, it can be that different models see different stories
 
-    all_stories = load_dataset(path=dname, cache_dir=MODELS_DIR)["train"]
+    all_stories = load_dataset(path=dataset_name, cache_dir=MODELS_DIR, streaming=True)["train"]
 
     inputs_BP = []
     selected_story_idxs = []
@@ -77,8 +78,8 @@ def collect_stories(tokenizer, dname, num_stories, num_tokens):
     return inputs_BP, selected_story_idxs
 
 
-def collect_sentences(tokenizer, dname, num_sentences, num_tokens):
-    with open(os.path.join(INPUTS_DIR, dname), "r") as f:
+def collect_sentences(tokenizer, dataset_name, num_sentences, num_tokens):
+    with open(os.path.join(INPUTS_DIR, dataset_name), "r") as f:
         all_sentences = json.load(f)["sentences"]
     print(f"Loaded {len(all_sentences)} sentences.")
 
@@ -118,14 +119,15 @@ def collect_sentences(tokenizer, dname, num_sentences, num_tokens):
 if __name__ == "__main__":
     # Define necessary inputs for batch_act_cache
     num_stories = 100
-    num_tokens = 24
+    num_tokens = 50
     batch_size = 20
-    # dname = "SimpleStories/SimpleStories"
-    dname = "simple_sentences.json"
+    dataset_name = "long_factual_sentences.json"
+    # dataset_name = "SimpleStories/SimpleStories"
+    # dataset_name = "simple_sentences.json"
     device = DEVICE
 
-    model_name = "openai-community/gpt2"  # 10 batches take 1 second on A600
-    # model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
+    # model_name = "openai-community/gpt2"  # 10 batches take 1 second on A600
+    model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
     # model_name = "google/gemma-3-12b-pt"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
@@ -156,17 +158,17 @@ if __name__ == "__main__":
         ]
 
     # Load dataset
-    if dname.endswith(".json"):
+    if dataset_name.endswith(".json"):
         inputs_BP, selected_story_idxs = collect_sentences(
             tokenizer=model.tokenizer,
-            dname=dname,
+            dataset_name=dataset_name,
             num_sentences=num_stories,
             num_tokens=num_tokens
         )
     else:
         inputs_BP, selected_story_idxs = collect_stories(
             tokenizer=model.tokenizer, 
-            dname=dname, 
+            dataset_name=dataset_name, 
             num_stories=num_stories, 
             num_tokens=num_tokens
         )
@@ -183,7 +185,7 @@ if __name__ == "__main__":
 
     # Save acts
     model_str = model_name.replace("/", "--")
-    dataset_str = dname.split("/")[-1].split(".")[0]
+    dataset_str = dataset_name.split("/")[-1].split(".")[0]
     save_name = f"{model_str}_{dataset_str}_samples{num_stories}"
 
 
