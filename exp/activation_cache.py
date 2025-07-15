@@ -126,8 +126,8 @@ if __name__ == "__main__":
     # dataset_name = "simple_sentences.json"
     device = DEVICE
 
-    # model_name = "openai-community/gpt2"  # 10 batches take 1 second on A600
-    model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
+    model_name = "openai-community/gpt2"  # 10 batches take 1 second on A600
+    # model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
     # model_name = "google/gemma-3-12b-pt"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"

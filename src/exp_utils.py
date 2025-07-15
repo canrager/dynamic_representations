@@ -30,9 +30,11 @@ def load_activations(
     """
     model_str = model_name.replace("/", "--")
     dataset_str = dataset_name.split("/")[-1].split(".")[0]
-    
+
     # Load indicies of stories in the full dataset
-    actual_story_idxs_fname = f"story_idxs_{model_str}_{dataset_str}_samples{num_stories}.pt"
+    actual_story_idxs_fname = (
+        f"story_idxs_{model_str}_{dataset_str}_samples{num_stories}.pt"
+    )
     actual_story_idxs_path = os.path.join(INTERIM_DIR, actual_story_idxs_fname)
     actual_story_idxs = torch.load(actual_story_idxs_path, weights_only=False)
 
@@ -40,7 +42,7 @@ def load_activations(
     tokens_save_fname = f"tokens_{model_str}_{dataset_str}_samples{num_stories}.pt"
     tokens_path = os.path.join(INTERIM_DIR, tokens_save_fname)
     tokens_BP = torch.load(tokens_path, weights_only=False)
-    
+
     # Load activations
     acts_save_fname = f"activations_{model_str}_{dataset_str}_samples{num_stories}.pt"
     acts_path = os.path.join(INTERIM_DIR, acts_save_fname)
@@ -105,7 +107,10 @@ def save_svd_results(
 
 
 def load_svd_results(
-    model_name: str, dataset_name: str, num_stories: int, layer_idx: Optional[int] = None
+    model_name: str,
+    dataset_name: str,
+    num_stories: int,
+    layer_idx: Optional[int] = None,
 ) -> Optional[Tuple[Tensor, Tensor, Tensor, Tensor]]:
     """
     Load SVD results from disk if they exist.
@@ -150,21 +155,25 @@ def load_svd_results(
         return None
 
 
-def compute_svd(
+def compute_centered_svd(
     act_LbD: Tensor,
     layer_idx: Optional[int] = None,
+    verbose: bool = False,
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
     """
     Compute SVD for a given layer of activations.
     """
 
     # Compute SVD layer by layer on GPU for efficiency and memory management
-    if layer_idx is not None:
-        print(f"Computing SVD for single layer {layer_idx} with proper centering...")
-    else:
-        print("Computing SVD layer by layer with proper centering...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    if verbose:
+        print(f"Using device: {device}")
+        if layer_idx is not None:
+            print(
+                f"Computing SVD for single layer {layer_idx} with proper centering..."
+            )
+        else:
+            print("Computing SVD layer by layer with proper centering...")
 
     L, b, D = act_LbD.shape
     C = min(b, D)  # Number of components
@@ -180,7 +189,7 @@ def compute_svd(
         S_LC = torch.zeros(1, C)
         Vt_LCD = torch.zeros(1, C, D)
         means_LD = torch.zeros(1, D)
-    else: # All layers, starting at 0
+    else:  # All layers, starting at 0
         layers_to_process = list(range(L))
         # Initialize tensors with full L dimension for all layers
         U_LbC = torch.zeros(L, b, C)
@@ -189,9 +198,10 @@ def compute_svd(
         means_LD = torch.zeros(L, D)
 
     # Process each layer
-    for i in trange(len(layers_to_process), desc="Computing SVD per layer"):
+    for i in range(len(layers_to_process)):
+        if verbose:
+            print(f"{i}. computing SVD for layer {actual_layer}")
         actual_layer = layers_to_process[i]
-        print(f"{i}. computing SVD for layer {actual_layer}")
         act_bD = act_LbD[actual_layer].to(device)
 
         # Center the data before SVD (proper PCA)
@@ -249,10 +259,12 @@ def compute_or_load_svd(
     L, B, P, D = act_LBPD.shape
     act_LbD = act_LBPD.reshape(L, B * P, D)
 
-    U_LbC, S_LC, Vt_LCD, means_LD = compute_svd(act_LbD, layer_idx)
+    U_LbC, S_LC, Vt_LCD, means_LD = compute_centered_svd(act_LbD, layer_idx)
 
     # Save the results
-    save_svd_results(U_LbC, S_LC, Vt_LCD, means_LD, model_name, dataset_name, num_stories, layer_idx)
+    save_svd_results(
+        U_LbC, S_LC, Vt_LCD, means_LD, model_name, dataset_name, num_stories, layer_idx
+    )
 
     return U_LbC, S_LC, Vt_LCD, means_LD
 
@@ -282,7 +294,9 @@ def load_tokens_of_story(
     dataset_str = dataset_name.split("/")[-1].split(".")[0]
     tokens_fname = f"tokens_{model_str}_{dataset_str}_samples{dataset_num_stories}.pt"
     inputs_BP = torch.load(os.path.join(INTERIM_DIR, tokens_fname), weights_only=False)
-    tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in inputs_BP[story_idx]]
+    tokens = [
+        tokenizer.decode(t, skip_special_tokens=False) for t in inputs_BP[story_idx]
+    ]
 
     if omit_BOS_token:
         # GPT2 doesn't add a BOS token, but other models like Llama do.
