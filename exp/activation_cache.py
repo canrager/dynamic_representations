@@ -119,15 +119,15 @@ def collect_sentences(tokenizer, dataset_name, num_sentences, num_tokens):
 if __name__ == "__main__":
     # Define necessary inputs for batch_act_cache
     num_stories = 100
-    num_tokens = 50
+    num_tokens = 100
     batch_size = 20
-    dataset_name = "long_factual_sentences.json"
-    # dataset_name = "SimpleStories/SimpleStories"
+    # dataset_name = "long_factual_sentences.json"
+    dataset_name = "SimpleStories/SimpleStories"
     # dataset_name = "simple_sentences.json"
     device = DEVICE
 
-    model_name = "openai-community/gpt2"  # 10 batches take 1 second on A600
-    # model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
+    # model_name = "openai-community/gpt2"  # 10 batches take 1 second on A600
+    model_name = "meta-llama/Llama-3.1-8B"  # 10 batches take 1 minute on A600
     # model_name = "google/gemma-3-12b-pt"
     # model_name = "allenai/Llama-3.1-Tulu-3-8B"
     # model_name = "google/gemma-2-2b"
@@ -184,9 +184,9 @@ if __name__ == "__main__":
     )
 
     # Save acts
-    model_str = model_name.replace("/", "--")
+    model_str = model_name.split("/")[-1]
     dataset_str = dataset_name.split("/")[-1].split(".")[0]
-    save_name = f"{model_str}_{dataset_str}_samples{num_stories}"
+    save_name = f"model_{model_str}_dataset_{dataset_str}_samples_{num_stories}"
 
 
     with open(os.path.join(INTERIM_DIR, f"activations_{save_name}.pt"), "wb") as f:

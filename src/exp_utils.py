@@ -17,6 +17,8 @@ def load_activations(
     story_idxs: Optional[List[int]] = None,
     omit_BOS_token: bool = False,
     dataset_name: str = "SimpleStories/SimpleStories",
+    num_tokens_per_story: Optional[int] = None,
+    input_str: str = "",
 ) -> Tuple[Tensor, Tensor, List[int]]:
     """
     Load activations and attention mask tensors for a given model and number of stories.
@@ -28,23 +30,19 @@ def load_activations(
     Returns:
         tuple: (activations tensor, attention mask tensor)
     """
-    model_str = model_name.replace("/", "--")
-    dataset_str = dataset_name.split("/")[-1].split(".")[0]
 
     # Load indicies of stories in the full dataset
-    actual_story_idxs_fname = (
-        f"story_idxs_{model_str}_{dataset_str}_samples{num_stories}.pt"
-    )
+    actual_story_idxs_fname = f"story_idxs_{input_str}.pt"
     actual_story_idxs_path = os.path.join(INTERIM_DIR, actual_story_idxs_fname)
     actual_story_idxs = torch.load(actual_story_idxs_path, weights_only=False)
 
     # Load tokens of stories
-    tokens_save_fname = f"tokens_{model_str}_{dataset_str}_samples{num_stories}.pt"
+    tokens_save_fname = f"tokens_{input_str}.pt"
     tokens_path = os.path.join(INTERIM_DIR, tokens_save_fname)
     tokens_BP = torch.load(tokens_path, weights_only=False)
 
     # Load activations
-    acts_save_fname = f"activations_{model_str}_{dataset_str}_samples{num_stories}.pt"
+    acts_save_fname = f"activations_{input_str}.pt"
     acts_path = os.path.join(INTERIM_DIR, acts_save_fname)
     activations_LBPD = torch.load(acts_path, weights_only=False).to("cpu")
 
@@ -55,7 +53,46 @@ def load_activations(
     if omit_BOS_token:
         activations_LBPD = activations_LBPD[:, :, 1:, :]
 
+    if num_tokens_per_story is not None:
+        activations_LBPD = activations_LBPD[:, :, :num_tokens_per_story, :]
+        tokens_BP = tokens_BP[:, :num_tokens_per_story]
+
     return activations_LBPD, actual_story_idxs, tokens_BP
+
+def load_activation_split(
+        cfg,
+    ):
+
+        act_LBPD, dataset_story_idxs, tokens_BP = load_activations(
+            cfg.model_name,
+            cfg.num_total_stories,
+            story_idxs=cfg.story_idxs,
+            omit_BOS_token=cfg.omit_BOS_token,
+            dataset_name=cfg.dataset_name,
+            num_tokens_per_story=cfg.num_tokens_per_story,
+            input_str=cfg.input_str,
+        )
+
+        # Do train-test split
+        if cfg.do_train_test_split:
+            rand_idxs = torch.randperm(cfg.num_total_stories)
+            train_idxs = rand_idxs[:cfg.num_train_stories]
+            test_idxs = rand_idxs[cfg.num_train_stories:]
+
+            act_train_LBPD = act_LBPD[:, train_idxs, :, :]
+            act_test_LBPD = act_LBPD[:, test_idxs, :, :]
+
+            tokens_test_BP = [tokens_BP[i] for i in test_idxs]
+            dataset_idxs_test = [dataset_story_idxs[i] for i in test_idxs]
+            num_test_stories = len(test_idxs)
+        else:
+            act_train_LBPD = act_LBPD
+            act_test_LBPD = act_LBPD
+            tokens_test_BP = tokens_BP
+            dataset_idxs_test = dataset_story_idxs
+            num_test_stories = cfg.num_total_stories
+
+        return act_train_LBPD, act_test_LBPD, tokens_test_BP, num_test_stories, dataset_idxs_test
 
 
 def save_svd_results(
