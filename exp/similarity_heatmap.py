@@ -8,7 +8,7 @@ from src.project_config import ARTIFACTS_DIR
 from src.exp_utils import (
     compute_or_load_svd,
     load_tokens_of_story,
-    load_activations,
+    compute_or_load_llm_artifacts,
     load_tokens_of_stories,
 )
 from tqdm import trange, tqdm
@@ -196,11 +196,11 @@ if __name__ == "__main__":
     num_thresholds = len(explained_variance_thresholds)
 
     # Load activations and SVD results on full dataset of stories
-    act_LbD, act_LBPD, mask_BP, trunc_seq_length = load_activations(
+    act_LbD, act_LBPD, mask_BP, trunc_seq_length = compute_or_load_llm_artifacts(
         model_name=model_name,
         num_stories=num_stories,
         story_idxs=None,  # Load for all stories for SVD
-        omit_BOS_token=do_omit_BOS_token,
+        cfg.omit_BOS_token=do_omit_BOS_token,
         truncate_to_min_seq_length=do_truncate_seq_length,
         subtract_mean=subtract_mean,
         truncate_seq_length=max_tokens_per_story,

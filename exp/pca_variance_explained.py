@@ -14,20 +14,24 @@ from tqdm import trange
 class Config:
     def __init__(self):
         ### Model
-        self.model_name: str = "openai-community/gpt2"
-        self.layer_idx: int = 6
-        # self.model_name: str = "meta-llama/Llama-3.1-8B"
-        # self.layer_idx: int = 12
+        # self.model_name: str = "openai-community/gpt2"
+        # self.layer_idx: int = 6
+        self.llm_name: str = "meta-llama/Llama-3.1-8B"
+        self.layer_idx: int = 12
+        self.llm_batch_size: str = 100
 
         ### Dataset
-        self.dataset_name: str = "SimpleStories/SimpleStories"
+        # self.dataset_name: str = "SimpleStories/SimpleStories"
+        # self.dataset_name: str = "monology/pile-uncopyrighted"
+        self.dataset_name: str = "NeelNanda/code-10k"
+        self.hf_text_identifier: str = "text"
         self.num_total_stories: int = 100
 
-        self.story_idxs: Optional[List[int]] = None
+        self.selected_story_idxs: Optional[List[int]] = None
         self.omit_BOS_token: bool = True
         self.num_tokens_per_story: int = 75
         self.do_train_test_split: bool = False
-        self.num_train_stories: int = 80
+        self.num_train_stories: int = 75
         self.force_recompute: bool = (
             True  # Always leave True, unless iterations with experiment iteration speed. force_recompute = False has the danger of using precomputed results with incorrect parameters.
         )
@@ -46,8 +50,9 @@ class Config:
         self.reconstruction_thresholds: List[float] = [0.9]
         # window_size needs to be an iterable, use [None] to disable
         # window_size = [1, 2, 3, 5, 10, 20]
-        self.window_sizes: List[Optional[int]] = [None, 2, 5, 10, 25, 50] # window_size=1 needs include_test_token_t_in_train_pca=True
-        self.include_test_token_t_in_train_pca: bool = True 
+        self.window_sizes: List[Optional[int]] = [None, 2, 5, 10, 25, 50]
+        # self.window_sizes: List[Optional[int]] = [None] 
+        self.include_test_token_t_in_train_pca: bool = False
         self.do_sort_pca_components_per_token: bool = True
 
         ### Dependent parameters
@@ -62,26 +67,24 @@ class Config:
         ), f"Invalid intrinsic dimension mode: {self.intrinsic_dimension_mode}"
 
         ### String summarizing the parameters for saving results
-        model_str = self.model_name.split("/")[-1]
+        model_str = self.llm_name.split("/")[-1]
         dataset_str = self.dataset_name.split("/")[-1].split(".")[0]
         story_idxs_str = (
-            "_".join([str(i) for i in self.story_idxs])
-            if self.story_idxs is not None
+            "_".join([str(i) for i in self.selected_story_idxs])
+            if self.selected_story_idxs is not None
             else "all"
         )
-        window_size_str = (
-            "_".join([str(w) for w in self.window_sizes])
-        )
+        window_size_str = "_".join([str(w) for w in self.window_sizes])
         threshold_str = "_".join([str(t) for t in self.reconstruction_thresholds])
 
-        self.input_str = (
+        self.input_file_str = (
             f"model_{model_str}"
             + f"_dataset_{dataset_str}"
             + f"_samples_{self.num_total_stories}"
         )
 
-        self.output_str = (
-            self.input_str
+        self.output_file_str = (
+            self.input_file_str
             + f"_mod_{self.intrinsic_dimension_mode}"
             + f"_lay_{self.layer_idx}"
             + f"_spl_{self.do_train_test_split}"
@@ -128,7 +131,9 @@ def compute_intrinsic_dimension(act_train_LBPD, act_test_LBPD, cfg, window_size=
 
         window_end_idx = p
 
-        if cfg.include_test_token_t_in_train_pca: # move the current test token into the train window
+        if (
+            cfg.include_test_token_t_in_train_pca
+        ):  # move the current test token into the train window
             window_start_idx += 1
             window_end_idx += 1
 
@@ -210,7 +215,7 @@ def compute_intrinsic_dimension_multiple_ws(act_train_LBPD, act_test_LBPD, cfg):
     id_ci_WPT = []
 
     for w in cfg.window_sizes:
-        print(f'window_size {w}')
+        print(f"window_size {w}")
         id_mean_PT, id_ci_PT = compute_intrinsic_dimension(
             act_train_LBPD, act_test_LBPD, cfg, window_size=w
         )
@@ -285,7 +290,7 @@ def plot_intrinsic_dimension(
     ax.set_title(
         f"Mean PCA Components Required Across Stories (95% CI) - Layer {cfg.layer_idx}"
     )
-    ax.legend(loc='center right')
+    ax.legend(loc="center right")
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()

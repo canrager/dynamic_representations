@@ -7,7 +7,7 @@ from src.project_config import PLOTS_DIR, DEVICE
 from src.exp_utils import (
     compute_or_load_svd,
     load_tokens_of_story,
-    load_activations,
+    compute_or_load_llm_artifacts,
     compute_centered_svd,
 )
 from tqdm import trange
@@ -24,12 +24,14 @@ def compute_intrinsic_dimension_skdim(
     act_train_before_p_BPD = act_train_LBPD[layer_idx, :, :, :]
 
     for p in trange(0, P, desc="Computing intrinsic dimension with skdim"):
-        act_train_before_p_bD = act_train_before_p_BPD[:, :p+1, :].flatten(0, 1)
+        act_train_before_p_bD = act_train_before_p_BPD[:, : p + 1, :].flatten(0, 1)
 
         if mode == "fisher":
             estimator = skdim.id.FisherS().fit(act_train_before_p_bD)
         elif mode == "pca":
-            estimator = skdim.id.lPCA(ver="ratio", alphaRatio=0.9).fit(act_train_before_p_bD)
+            estimator = skdim.id.lPCA(ver="ratio", alphaRatio=0.9).fit(
+                act_train_before_p_bD
+            )
         else:
             raise ValueError(f"Invalid mode: {mode}")
 
@@ -59,7 +61,9 @@ def compute_intrinsic_dimension_windowed_skdim(
         if mode == "fisher":
             estimator = skdim.id.FisherS().fit(act_train_before_p_bD)
         elif mode == "pca":
-            estimator = skdim.id.lPCA(ver="ratio", alphaRatio=0.9).fit(act_train_before_p_bD)
+            estimator = skdim.id.lPCA(ver="ratio", alphaRatio=0.9).fit(
+                act_train_before_p_bD
+            )
         else:
             raise ValueError(f"Invalid mode: {mode}")
 
@@ -176,11 +180,15 @@ def compute_variance_explained_pca_before_token_p(
     else:
         start_token_idx = 1
 
-    for p in trange(start_token_idx, P, desc="Computing explained variance of PCA before token p"):
+    for p in trange(
+        start_token_idx, P, desc="Computing explained variance of PCA before token p"
+    ):
         if window_size is not None:
-            act_train_before_p_LBpD = act_train_LBPD[:, :, p-window_size+1:p+1, :]
+            act_train_before_p_LBpD = act_train_LBPD[
+                :, :, p - window_size + 1 : p + 1, :
+            ]
         else:
-            act_train_before_p_LBpD = act_train_LBPD[:, :, :p+1, :]
+            act_train_before_p_LBpD = act_train_LBPD[:, :, : p + 1, :]
 
         ##### Compute PCA (=centered SVD) results on full dataset of stories
         act_train_before_p_LbD = act_train_before_p_LBpD.flatten(1, 2)
@@ -192,14 +200,16 @@ def compute_variance_explained_pca_before_token_p(
         mean_train_D = mean_train_LD[0]
 
         ##### Compute full variance of test representations
-        act_test_at_p_BD = act_test_LBPD[layer_idx, :, p, :] 
+        act_test_at_p_BD = act_test_LBPD[layer_idx, :, p, :]
 
         ## Alternative: include all tokens before p
         # act_test_at_p_BPD = act_test_LBPD[layer_idx, :, :p+1, :]
         # act_test_at_p_BD = act_test_at_p_BPD.flatten(0, 1)
 
         # NOTE two options for centering the test set:
-        act_test_at_p_centered_BD = act_test_at_p_BD - mean_train_D  # center wrt. train set
+        act_test_at_p_centered_BD = (
+            act_test_at_p_BD - mean_train_D
+        )  # center wrt. train set
         # act_test_at_p_centered_BD = act_test_at_p_BD - act_test_at_p_BD.mean(dim=0) # center wrt. test set
 
         act_test_at_p_centered_BD = act_test_at_p_centered_BD.to(DEVICE)
@@ -229,14 +239,20 @@ def compute_variance_explained_pca_before_token_p(
             explained_variance_cumulative_BC[:, :, None]
             >= torch.tensor(reconstruction_thresholds)[None, None, :]
         )
-        min_components_required_BT = torch.argmax(meets_threshold_BCT.int(), dim=-2) + 1 # 1-indexed
+        min_components_required_BT = (
+            torch.argmax(meets_threshold_BCT.int(), dim=-2) + 1
+        )  # 1-indexed
 
         # If no solution is found, set to max number of components
         has_solution_BT = torch.any(meets_threshold_BCT, dim=-2)
         min_components_required_BT.masked_fill_(~has_solution_BT, C)
 
-        min_components_required_mean_PT[p, :] = min_components_required_BT.float().mean(dim=0)
-        min_components_required_std_PT[p, :] = min_components_required_BT.float().std(dim=0)
+        min_components_required_mean_PT[p, :] = min_components_required_BT.float().mean(
+            dim=0
+        )
+        min_components_required_std_PT[p, :] = min_components_required_BT.float().std(
+            dim=0
+        )
 
     return min_components_required_mean_PT, min_components_required_std_PT
 
@@ -349,7 +365,7 @@ def plot_num_components_required_to_reconstruct(
             range(P),
             min_components_required_mean_PT[:, t],
             label=f"{reconstruction_thresholds[t]*100}% explained variance",
-            )
+        )
 
     ax.legend()
     ax.set_xlabel("Token Position")
@@ -429,8 +445,9 @@ def plot_mean_components_across_stories(
 
         # 95% confidence interval: 1.96 * std / sqrt(n)
         positions_P = torch.arange(max_pos)
-        ci_components_P = 1.96 * std_components / ((num_test_stories*(positions_P+1))**0.5) # NOTE the number of all samples increases with each token position
-
+        ci_components_P = (
+            1.96 * std_components / ((num_test_stories * (positions_P + 1)) ** 0.5)
+        )  # NOTE the number of all samples increases with each token position
 
         # Plot mean line
         label = f"{threshold*100}% variance threshold"
@@ -471,13 +488,67 @@ def plot_intrinsic_dimension(
     P = intrinsic_dimension_P.shape[0]
     fig, ax = plt.subplots(figsize=(12, 6))
 
-    discrete_colors = ["red", "blue", "green", "purple", "orange", "brown", "pink", "gray", "black", "cyan", "magenta", "yellow", "lime", "teal", "indigo", "violet", "maroon", "navy", "olive", "coral", "gold", "silver", "plum", "tan", "khaki", "lavender", "turquoise", "beige", "chocolate", "coral", "crimson", "fuchsia", "indigo", "ivory", "khaki", "lavender", "maroon", "navy", "olive", "plum", "salmon", "tan", "teal", "turquoise", "violet", "wheat", "white", "yellow"]
+    discrete_colors = [
+        "red",
+        "blue",
+        "green",
+        "purple",
+        "orange",
+        "brown",
+        "pink",
+        "gray",
+        "black",
+        "cyan",
+        "magenta",
+        "yellow",
+        "lime",
+        "teal",
+        "indigo",
+        "violet",
+        "maroon",
+        "navy",
+        "olive",
+        "coral",
+        "gold",
+        "silver",
+        "plum",
+        "tan",
+        "khaki",
+        "lavender",
+        "turquoise",
+        "beige",
+        "chocolate",
+        "coral",
+        "crimson",
+        "fuchsia",
+        "indigo",
+        "ivory",
+        "khaki",
+        "lavender",
+        "maroon",
+        "navy",
+        "olive",
+        "plum",
+        "salmon",
+        "tan",
+        "teal",
+        "turquoise",
+        "violet",
+        "wheat",
+        "white",
+        "yellow",
+    ]
 
     if "windowed" in intrinsic_dimension_mode and isinstance(window_size, list):
         for i, ws in enumerate(window_size):
             color = discrete_colors[i]
             ax.plot(intrinsic_dimension_P[i], label=f"window_size={ws}", color=color)
-            ax.scatter(range(P), intrinsic_dimension_P[i], label=f"window_size={ws}", color=color)
+            ax.scatter(
+                range(P),
+                intrinsic_dimension_P[i],
+                label=f"window_size={ws}",
+                color=color,
+            )
         ax.legend()
     else:
         ax.plot(intrinsic_dimension_P)
@@ -523,7 +594,6 @@ if __name__ == "__main__":
     do_train_test_split = False
     omit_BOS_token = True
 
-
     # reconstruction_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     reconstruction_thresholds = [0.9]
     test_len = num_total_stories - num_total_stories_train
@@ -550,11 +620,11 @@ if __name__ == "__main__":
 
     ##### Load activations
 
-    act_LBPD, dataset_story_idxs, tokens_BP = load_activations(
+    act_LBPD, dataset_story_idxs, tokens_BP = compute_or_load_llm_artifacts(
         model_name,
         num_total_stories,
         story_idxs=None,
-        omit_BOS_token=omit_BOS_token,
+        cfg.omit_BOS_token=omit_BOS_token,
         dataset_name=dataset_name,
     )
     if num_tokens_per_story is not None:
@@ -618,7 +688,7 @@ if __name__ == "__main__":
 
     # if "skdim" in intrinsic_dimension_mode:
     plot_intrinsic_dimension(
-        intrinsic_dimension_P=id_results_mean_PT, # this is actually not PT but P
+        intrinsic_dimension_P=id_results_mean_PT,  # this is actually not PT but P
         layer_idx=layer_idx,
         model_name=model_name,
         dataset_name=dataset_name,

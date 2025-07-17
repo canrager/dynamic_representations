@@ -1,6 +1,7 @@
 import os
 import sys
 from typing import Optional
+from nnsight import LanguageModel
 import torch
 from transformers import (
     AutoTokenizer,
@@ -8,23 +9,52 @@ from transformers import (
     AutoModelForCausalLM,
     BitsAndBytesConfig,
 )
-from src.project_config import MODELS_DIR
+from src.project_config import MODELS_DIR, DEVICE
 
-def load_tokenizer(model_name: str, cache_dir: str):
-    if "gpt2" in model_name:
-        tokenizer = GPT2Tokenizer.from_pretrained(
-            model_name, cache_dir=MODELS_DIR
-        )
+from sparsify import Sae
+
+
+def load_tokenizer(llm_name: str, cache_dir: str):
+    if "gpt2" in llm_name:
+        tokenizer = GPT2Tokenizer.from_pretrained(llm_name, cache_dir=MODELS_DIR)
         tokenizer.add_bos_token = True
         tokenizer.pad_token = tokenizer.eos_token
     else:
-        tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(llm_name, cache_dir=cache_dir)
 
     return tokenizer
 
 
-def load_model(
-    model_name: str,
+def load_nnsight_model(cfg):
+    model = LanguageModel(
+        cfg.llm_name,
+        cache_dir=MODELS_DIR,
+        device_map=DEVICE,  # Use the defined device
+        dispatch=True,
+    )
+
+    if "gpt2" in cfg.llm_name:
+        print(model)
+        print(model.config)
+        hidden_dim = model.config.n_embd
+        submodules = [model.transformer.h[l] for l in range(model.config.n_layer)]
+
+        # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
+        model.tokenizer = load_tokenizer(cfg.llm_name, cache_dir=MODELS_DIR)
+
+    elif "Llama" in cfg.llm_name:
+        print(model)
+        print(model.config)
+        hidden_dim = model.config.hidden_size
+        submodules = [
+            model.model.layers[l] for l in range(model.config.num_hidden_layers)
+        ]
+
+    return model, submodules, hidden_dim
+
+
+def load_hf_model(
+    llm_name: str,
     cache_dir: str,
     device: str,
     quantization_bits: int = None,
@@ -40,7 +70,7 @@ def load_model(
     """
 
     if verbose and cache_dir is not None:
-        local_path = os.path.join(cache_dir, f"models--{model_name.replace('/', '--')}")
+        local_path = os.path.join(cache_dir, f"models--{llm_name.replace('/', '--')}")
         local_path_exists = os.path.exists(local_path)
         if local_path_exists:
             print(f"Model exists in {local_path}")
@@ -48,7 +78,7 @@ def load_model(
             print(f"Model does not exist in {local_path}")
 
     # Load tokenizer
-    tokenizer = load_tokenizer(model_name, cache_dir)
+    tokenizer = load_tokenizer(llm_name, cache_dir)
     if tokenizer_only:
         return tokenizer
 
@@ -70,7 +100,7 @@ def load_model(
 
     # Load model
     model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+        llm_name,
         torch_dtype=torch_dtype,
         device_map=device,
         quantization_config=quantization_config,
@@ -82,3 +112,10 @@ def load_model(
     model = torch.compile(model)
 
     return model, tokenizer
+
+
+def load_sae(sae_name, layer_idx):
+    sae_hookpoint_str = f"layers.{layer_idx}"
+    sae = Sae.load_from_hub(sae_name, sae_hookpoint_str, cache_dir=MODELS_DIR)
+    sae = sae.to(DEVICE)
+    return sae

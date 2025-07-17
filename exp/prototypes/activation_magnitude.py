@@ -7,7 +7,7 @@ from src.project_config import PLOTS_DIR, DEVICE
 from src.exp_utils import (
     compute_or_load_svd,
     load_tokens_of_story,
-    load_activations,
+    compute_or_load_llm_artifacts,
     compute_centered_svd,
 )
 from tqdm import trange
@@ -32,11 +32,11 @@ if __name__ == "__main__":
 
     ##### Load activations
 
-    act_LBPD, dataset_story_idxs, tokens_BP = load_activations(
+    act_LBPD, dataset_story_idxs, tokens_BP = compute_or_load_llm_artifacts(
         model_name,
         num_total_stories,
         story_idxs=None,
-        omit_BOS_token=omit_BOS_token,
+        cfg.omit_BOS_token=omit_BOS_token,
         dataset_name=dataset_name,
     )
     if num_tokens_per_story is not None:
@@ -50,10 +50,16 @@ if __name__ == "__main__":
     ci = 1.96 * std_magnitude_BP / np.sqrt(magnitude_BP.shape[0])
     mean_magnitude_BP = mean_magnitude_BP.cpu().numpy()
     ci = ci.cpu().numpy()
-    
+
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(mean_magnitude_BP, label="Mean magnitude (L2)")
-    ax.fill_between(range(len(mean_magnitude_BP)), mean_magnitude_BP - ci, mean_magnitude_BP + ci, alpha=0.2, label="95% CI")
+    ax.fill_between(
+        range(len(mean_magnitude_BP)),
+        mean_magnitude_BP - ci,
+        mean_magnitude_BP + ci,
+        alpha=0.2,
+        label="95% CI",
+    )
     ax.set_xlabel("Token position")
     ax.set_ylabel("Mean magnitude")
     ax.set_title(f"Mean magnitude of activations at layer {layer_idx} of {model_name}")
