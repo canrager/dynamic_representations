@@ -1,11 +1,14 @@
 '''
 Plot number of active sae features over tokens
-
 '''
 
+import torch as th
 from typing import Optional, List
 from src.exp_utils import compute_or_load_sae
 from src.project_config import DEVICE
+import matplotlib.pyplot as plt
+import os
+from src.project_config import PLOTS_DIR
 
 class Config():
     def __init__(self):
@@ -21,14 +24,14 @@ class Config():
         # self.dataset_name: str = "NeelNanda/code-10k"
         self.num_total_stories: int = 100
 
-        self.story_idxs: Optional[List[int]] = None
+        self.selected_story_idxs: Optional[List[int]] = None
         self.omit_BOS_token: bool = True
         self.num_tokens_per_story: int = 75
-        self.do_train_test_split: bool = False
-        self.num_train_stories: int = 75
         self.force_recompute: bool = (
             True  # Always leave True, unless iterations with experiment iteration speed. force_recompute = False has the danger of using precomputed results with incorrect parameters.
         )
+
+        self.latent_active_threshs: bool = [0.1, 0.2, 0.3, 0.4, 0.5, 1]
 
 
         ### String summarizing the parameters for loading and saving artifacts
@@ -37,7 +40,7 @@ class Config():
         dataset_str = self.dataset_name.split("/")[-1].split(".")[0]
         story_idxs_str = (
             "_".join([str(i) for i in self.story_idxs])
-            if self.story_idxs is not None
+            if self.selected_story_idxs is not None
             else "all"
         )
 
@@ -56,26 +59,75 @@ class Config():
             + f"_didx_{story_idxs_str}"
         )
 
+def plot_num_active_latents(latent_acts_BPS, cfg):
+    # Find active latents
+    latent_active_threshs_T = th.tensor(cfg.latent_active_threshs)
+    is_active_BPST = latent_acts_BPS[:, :, :, None] > latent_active_threshs_T[None, None, None, :]
+    num_active_BPT = is_active_BPST.sum(dim=-2)
+
+    # Mean, std, CI over batch
+    num_active_mean_PT = num_active_BPT.float().mean(dim=0)
+    num_active_std_PT = num_active_BPT.float().std(dim=0)
+    B = num_active_BPT.shape[0]
+    num_active_ci_PT = 1.96 * num_active_std_PT / (B**0.5)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    for t_idx, t in enumerate(cfg.latent_active_threshs):
+        num_active_mean_P = num_active_mean_PT[:, t_idx]
+        num_active_ci_P = num_active_ci_PT[:, t_idx]
+        ax.plot(num_active_mean_P, label=f"active above {t}")
+        ax.fill_between(
+            range(len(num_active_mean_P)),
+            num_active_mean_P - num_active_ci_P,
+            num_active_mean_P + num_active_ci_P,
+            alpha=0.2
+        )
+
+    
+    ax.set_xlabel("Token position")
+    ax.set_ylabel("Number of active latents")
+    ax.set_title(f"Number of active latents over tokens\nsae {cfg.sae_name}, dataset {cfg.dataset_name}")
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+
+    save_dir = os.path.join(PLOTS_DIR, f"num_active_latents_{cfg.output_file_str}.png")
+    plt.savefig(save_dir, dpi=80)
+    print(f"\nSaved figure to {save_dir}")
+    plt.close()
+
+
+def plot_fvu(fvu_BP, cfg):
+    fvu_mean_P = fvu_BP.float().mean(dim=0)
+    fvu_std_P = fvu_BP.float().std(dim=0)
+    B = fvu_BP.shape[0]
+    fvu_ci_P = 1.96 * fvu_std_P / (B**0.5)
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(fvu_mean_P, label="fvu")
+    ax.fill_between(
+        range(len(fvu_mean_P)),
+        fvu_mean_P - fvu_ci_P,
+        fvu_mean_P + fvu_ci_P,
+        alpha=0.2
+    )
+
+    ax.set_xlabel("Token position")
+    ax.set_ylabel("FVU")
+    ax.set_title(f"FVU over tokens\nsae {cfg.sae_name}, dataset {cfg.dataset_name}")
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    
+    save_dir = os.path.join(PLOTS_DIR, f"fvu_{cfg.output_file_str}.png")
+    plt.savefig(save_dir, dpi=80)
+    print(f"\nSaved FVU plot to {save_dir}")
+    plt.close()
 
 if __name__ == "__main__":
 
     cfg = Config()
 
-    fvu_BP, latent_acts_BPS, latent_indices_BPK = compute_or_load_sae(
-        sae_name=cfg.sae_name,
-        model_name=cfg.llm_name,
-        num_stories=cfg.num_total_stories,
-        layer_idx=cfg.layer_idx,
-        batch_size=cfg.sae_batch_size,
-        device=DEVICE,
-        force_recompute=cfg.force_recompute,
-        do_omit_BOS_token=cfg.omit_BOS_token,
-        input_str=cfg.input_file_str,
-        story_idxs=cfg.story_idxs,
-        num_tokens_per_story=cfg.num_tokens_per_story,
-        cfg = cfg,
-    )
+    fvu_BP, latent_acts_BPS, latent_indices_BPK = compute_or_load_sae(cfg)
 
-    print(f'fvu_BP {fvu_BP.shape}')
-    print(f'latent_acts_BPS {latent_acts_BPS.shape}')
-    print(f'latent_indices_BPK {latent_indices_BPK.shape}')
+    plot_num_active_latents(latent_acts_BPS, cfg)
+
+    plot_fvu(fvu_BP, cfg)

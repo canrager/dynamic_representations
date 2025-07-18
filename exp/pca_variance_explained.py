@@ -37,14 +37,6 @@ class Config:
         )
 
         ### PCA
-        self.available_intrinsic_dimension_modes: List[str] = [
-            "fisher_skdim",
-            "pca_skdim",
-            "pca_full_manual",
-            "pca_before_p_manual",
-            "pca_windowed_skdim",
-        ]
-        self.intrinsic_dimension_mode: str = "pca_before_p_manual"
 
         # reconstruction_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
         self.reconstruction_thresholds: List[float] = [0.9]
@@ -85,7 +77,6 @@ class Config:
 
         self.output_file_str = (
             self.input_file_str
-            + f"_mod_{self.intrinsic_dimension_mode}"
             + f"_lay_{self.layer_idx}"
             + f"_spl_{self.do_train_test_split}"
             + f"_ntr_{self.num_train_stories}"

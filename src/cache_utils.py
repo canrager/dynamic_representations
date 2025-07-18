@@ -133,6 +133,7 @@ def batch_sae_cache(
     K = sae.cfg.k
 
     act_flattened = act_BPD.reshape(B * P, D)
+    out_flattened = []
     fvu_flattened = []
     latent_acts_flattened = []
     latent_indices_flattened = []
@@ -141,21 +142,24 @@ def batch_sae_cache(
         batch = act_flattened[i : i + batch_size]
         batch = batch.to(device)
         batch_sae = sae.forward(batch)
+        out_flattened.append(batch_sae.sae_out.detach().cpu())
         fvu_flattened.append(batch_sae.fvu.detach().cpu())
         latent_acts_flattened.append(batch_sae.latent_acts.detach().cpu())
         latent_indices_flattened.append(batch_sae.latent_indices.detach().cpu())
         if i == 0:
             print(f"batch_sae {batch_sae}")
 
+    out_flattened = torch.cat(out_flattened, dim=0)
     fvu_flattened = torch.cat(fvu_flattened, dim=0)
     latent_acts_flattened = torch.cat(latent_acts_flattened, dim=0)
     latent_indices_flattened = torch.cat(latent_indices_flattened, dim=0)
 
+    out = out_flattened.reshape(B, P, D)
     fvu = fvu_flattened.reshape(B, P)
     latent_acts = latent_acts_flattened.reshape(B, P, K)
     latent_indices = latent_indices_flattened.reshape(B, P, K)
 
-    return fvu, latent_acts, latent_indices
+    return out, fvu, latent_acts, latent_indices
 
 
 def compute_llm_artifacts(cfg):

@@ -5,11 +5,10 @@ from typing import Tuple, Optional, List
 import torch
 from torch import Tensor
 from tqdm import trange
-from sparsify import Sae
 
-from src.project_config import INTERIM_DIR, MODELS_DIR, INPUTS_DIR
+from src.project_config import INTERIM_DIR, MODELS_DIR, INPUTS_DIR, DEVICE
 from src.model_utils import load_tokenizer, load_sae
-from src.cache_utils import compute_llm_artifacts
+from src.cache_utils import compute_llm_artifacts, batch_sae_cache
 
 
 def compute_or_load_llm_artifacts(cfg) -> Tuple[Tensor, Tensor, List[int]]:
@@ -29,11 +28,13 @@ def compute_or_load_llm_artifacts(cfg) -> Tuple[Tensor, Tensor, List[int]]:
         "all_idxs": f"story_idxs_{cfg.input_file_str}.pt",
         "tokens": f"tokens_{cfg.input_file_str}.pt",
     }
-    artifact_dirs = {k: os.path.join(INTERIM_DIR, v) for k, v in artifact_fnames.items()}
+    artifact_dirs = {
+        k: os.path.join(INTERIM_DIR, v) for k, v in artifact_fnames.items()
+    }
     is_existing = all([os.path.exists(d) for d in artifact_dirs.values()])
 
     if not is_existing:
-        acts_LBPD, story_idxs, tokens_BP = compute_llm_artifacts(cfg)
+        acts_LBPD, dataset_story_idxs, tokens_BP = compute_llm_artifacts(cfg)
     else:
         acts_LBPD = torch.load(artifact_dirs["act"], weights_only=False).to("cpu")
         dataset_story_idxs = torch.load(artifact_dirs["all_idxs"], weights_only=False)
@@ -47,8 +48,8 @@ def compute_or_load_llm_artifacts(cfg) -> Tuple[Tensor, Tensor, List[int]]:
         acts_LBPD = acts_LBPD[:, :, 1:, :]
 
     if cfg.num_tokens_per_story is not None:
-        acts_LBPD = acts_LBPD[:, :, :cfg.num_tokens_per_story, :]
-        tokens_BP = tokens_BP[:, :cfg.num_tokens_per_story]
+        acts_LBPD = acts_LBPD[:, :, : cfg.num_tokens_per_story, :]
+        tokens_BP = tokens_BP[:, : cfg.num_tokens_per_story]
 
     return acts_LBPD, dataset_story_idxs, tokens_BP
 
@@ -59,8 +60,8 @@ def load_activation_split(cfg):
     # Do train-test split
     if cfg.do_train_test_split:
         rand_idxs = torch.randperm(cfg.num_total_stories)
-        train_idxs = rand_idxs[:cfg.num_train_stories]
-        test_idxs = rand_idxs[cfg.num_train_stories:]
+        train_idxs = rand_idxs[: cfg.num_train_stories]
+        test_idxs = rand_idxs[cfg.num_train_stories :]
 
         act_train_LBPD = act_LBPD[:, train_idxs, :, :]
         act_test_LBPD = act_LBPD[:, test_idxs, :, :]
@@ -75,35 +76,18 @@ def load_activation_split(cfg):
         dataset_idxs_test = dataset_story_idxs
         num_test_stories = cfg.num_total_stories
 
-    return act_train_LBPD, act_test_LBPD, tokens_test_BP, num_test_stories, dataset_idxs_test
+    return (
+        act_train_LBPD,
+        act_test_LBPD,
+        tokens_test_BP,
+        num_test_stories,
+        dataset_idxs_test,
+    )
 
 
-def compute_or_load_sae(
-    sae_name: str,
-    model_name: str,
-    num_stories: int,
-    layer_idx: int,
-    batch_size: int = 100,
-    device: str = "cuda",
-    force_recompute: bool = False,
-    do_omit_BOS_token: bool = True,
-    input_str: str = "",
-    story_idxs = [],
-    num_tokens_per_story = 50,
-    cfg = {}
-) -> Tuple[Tensor, Tensor, Tensor]:
+def compute_or_load_sae(cfg) -> Tuple[Tensor, Tensor, Tensor]:
     """
     Compute or load SAE results for a given model, layer, and number of stories.
-
-    Args:
-        sae_name: Name of the SAE model to load.
-        model_name: Name of the model (e.g., "openai-community/gpt2").
-        num_stories: Number of stories used for activations.
-        layer_idx: Index of the layer to get activations from.
-        batch_size: Batch size for SAE forward pass.
-        device: Device to run computation on.
-        force_recompute: If True, recompute SAE results even if they exist.
-        do_omit_BOS_token: Whether to omit the BOS token from activations.
 
     Returns:
         Tuple containing:
@@ -111,45 +95,45 @@ def compute_or_load_sae(
         - latent_acts_BPS: Latent activations tensor.
         - latent_indices_BPK: Latent indices tensor.
     """
-    sae_path = os.path.join(INTERIM_DIR, cfg.sae_file_str)
+    sae_path = os.path.join(INTERIM_DIR, f"sae_activations_{cfg.sae_file_str}.pt")
 
-    if force_recompute or not os.path.exists(sae_path):
-        act_LBPD, dataset_story_idxs, tokens_BP = compute_or_load_llm_artifacts(
-            story_idxs=story_idxs,
-            omit_BOS_token=do_omit_BOS_token,
-            num_tokens_per_story=num_tokens_per_story,
-            input_str=input_str,
-        )
-        act_BPD = act_LBPD[layer_idx]
+    if cfg.force_recompute or not os.path.exists(sae_path):
+        llm_act_LBPD, dataset_story_idxs, tokens_BP = compute_or_load_llm_artifacts(cfg)
+        llm_act_BPD = llm_act_LBPD[cfg.layer_idx]
 
         # Load SAE
-        sae = load_sae(sae_name, layer_idx)
+        sae = load_sae(cfg.sae_name, cfg.layer_idx)
 
         # Compute data
-        fvu_BP, latent_acts_BPS, latent_indices_BPK = batch_sae_forward(
-            sae, act_BPD, batch_size, device
+        sae_out_BPD, fvu_BP, latent_acts_BPS, latent_indices_BPK = batch_sae_cache(
+            sae, llm_act_BPD, cfg.sae_batch_size, DEVICE
         )
 
         # Save data
         sae_data = {
+            "llm_acts": llm_act_BPD,
+            "sae_out": sae_out_BPD,
             "fvu": fvu_BP,
             "latent_acts": latent_acts_BPS,
             "latent_indices": latent_indices_BPK,
-            "model_name": model_name,
-            "num_stories": num_stories,
-            "sae_name": sae_name,
-            "layer_idx": layer_idx,
+            "model_name": cfg.llm_name,
+            "num_total_stories": cfg.num_total_stories,
+            "sae_name": cfg.sae_name,
+            "layer_idx": cfg.layer_idx,
         }
-        torch.save(sae_data, sae_path)
+        with open(sae_path, "wb") as f:
+            torch.save(sae_data, f)
     else:
         # Load precomputed artifacts
         sae_data = torch.load(sae_path, weights_only=False)
-        fvu_BP =  sae_data["fvu"], 
+        llm_act_BPD = sae_data["llm_acts"]
         latent_acts_BPS = sae_data["latent_acts"]
         latent_indices_BPK = sae_data["latent_indices"]
+        sae_out_BPD = sae_data["sae_out"]
+        fvu_BP = sae_data["fvu"]
         print(f"SAE results loaded from: {sae_path}")
 
-    return fvu_BP, latent_acts_BPS, latent_indices_BPK
+    return llm_act_BPD, latent_acts_BPS, latent_indices_BPK, sae_out_BPD, fvu_BP
 
 
 def save_svd_results(
@@ -418,8 +402,3 @@ def load_tokens_of_stories(
             load_tokens_of_story(story_idx, model_name, omit_BOS_token, seq_length)
         )
     return tokens_of_stories
-
-
-
-
-
