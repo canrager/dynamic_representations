@@ -1,6 +1,7 @@
+from pathlib import Path
+
 DEVICE = "cuda"
-MODELS_DIR = "/home/can/models"
-# MODELS_DIR = "/share/u/models"
-PLOTS_DIR = "artifacts/plots"
-INTERIM_DIR = "artifacts/interim"
-INPUTS_DIR = "artifacts/inputs"
+MODELS_DIR = Path("/home/can/models")
+PLOTS_DIR = Path("artifacts/plots")
+INTERIM_DIR = Path("artifacts/interim")
+INPUTS_DIR = Path("artifacts/inputs")

@@ -300,6 +300,8 @@ if __name__ == "__main__":
     (
         act_train_LBPD,
         act_test_LBPD,
+        mask_train_BP,
+        mask_test_BP,
         tokens_test_BP,
         num_test_stories,
         dataset_idxs_test,

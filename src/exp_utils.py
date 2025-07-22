@@ -11,7 +11,7 @@ from src.model_utils import load_tokenizer, load_sae
 from src.cache_utils import compute_llm_artifacts, batch_sae_cache
 
 
-def compute_or_load_llm_artifacts(cfg) -> Tuple[Tensor, Tensor, List[int]]:
+def compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=None) -> Tuple[Tensor, Tensor, List[int]]:
     """
     Load activations and attention mask tensors for a given model and number of stories.
 
@@ -25,8 +25,9 @@ def compute_or_load_llm_artifacts(cfg) -> Tuple[Tensor, Tensor, List[int]]:
 
     artifact_fnames = {
         "act": f"activations_{cfg.input_file_str}.pt",
-        "all_idxs": f"story_idxs_{cfg.input_file_str}.pt",
+        "mask": f"mask_{cfg.input_file_str}.pt",
         "tokens": f"tokens_{cfg.input_file_str}.pt",
+        "all_idxs": f"story_idxs_{cfg.input_file_str}.pt",
     }
     artifact_dirs = {
         k: os.path.join(INTERIM_DIR, v) for k, v in artifact_fnames.items()
@@ -34,28 +35,34 @@ def compute_or_load_llm_artifacts(cfg) -> Tuple[Tensor, Tensor, List[int]]:
     is_existing = all([os.path.exists(d) for d in artifact_dirs.values()])
 
     if not is_existing:
-        acts_LBPD, dataset_story_idxs, tokens_BP = compute_llm_artifacts(cfg)
+        acts_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
     else:
         acts_LBPD = torch.load(artifact_dirs["act"], weights_only=False).to("cpu")
-        dataset_story_idxs = torch.load(artifact_dirs["all_idxs"], weights_only=False)
+        masks_BP = torch.load(artifact_dirs["mask"], weights_only=False)
         tokens_BP = torch.load(artifact_dirs["tokens"], weights_only=False)
+        dataset_story_idxs = torch.load(artifact_dirs["all_idxs"], weights_only=False)
 
     if cfg.selected_story_idxs is not None:
+        dataset_story_idxs = torch.tensor(dataset_story_idxs)
         dataset_story_idxs = dataset_story_idxs[cfg.selected_story_idxs]
         acts_LBPD = acts_LBPD[:, dataset_story_idxs, :, :]
+        masks_BP = masks_BP[dataset_story_idxs, :]
 
     if cfg.omit_BOS_token:
         acts_LBPD = acts_LBPD[:, :, 1:, :]
+        tokens_BP = tokens_BP[:, 1:]
+        masks_BP = masks_BP[:, 1:]
 
     if cfg.num_tokens_per_story is not None:
         acts_LBPD = acts_LBPD[:, :, : cfg.num_tokens_per_story, :]
         tokens_BP = tokens_BP[:, : cfg.num_tokens_per_story]
+        masks_BP = masks_BP[:, : cfg.num_tokens_per_story]
 
-    return acts_LBPD, dataset_story_idxs, tokens_BP
+    return acts_LBPD, masks_BP, tokens_BP, dataset_story_idxs
 
 
-def load_activation_split(cfg):
-    act_LBPD, dataset_story_idxs, tokens_BP = compute_or_load_llm_artifacts(cfg)
+def load_activation_split(cfg, loaded_dataset_sequences=None):
+    act_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
 
     # Do train-test split
     if cfg.do_train_test_split:
@@ -66,12 +73,17 @@ def load_activation_split(cfg):
         act_train_LBPD = act_LBPD[:, train_idxs, :, :]
         act_test_LBPD = act_LBPD[:, test_idxs, :, :]
 
+        masks_train_BP = masks_BP[:, train_idxs, :]
+        masks_test_BP = masks_BP[:, test_idxs, :]
+
         tokens_test_BP = [tokens_BP[i] for i in test_idxs]
         dataset_idxs_test = [dataset_story_idxs[i] for i in test_idxs]
         num_test_stories = len(test_idxs)
     else:
         act_train_LBPD = act_LBPD
         act_test_LBPD = act_LBPD
+        masks_train_BP = masks_BP
+        masks_test_BP = masks_BP
         tokens_test_BP = tokens_BP
         dataset_idxs_test = dataset_story_idxs
         num_test_stories = cfg.num_total_stories
@@ -79,13 +91,15 @@ def load_activation_split(cfg):
     return (
         act_train_LBPD,
         act_test_LBPD,
+        masks_train_BP,
+        masks_test_BP,
         tokens_test_BP,
         num_test_stories,
         dataset_idxs_test,
     )
 
 
-def compute_or_load_sae(cfg) -> Tuple[Tensor, Tensor, Tensor]:
+def compute_or_load_sae(cfg, loaded_dataset_sequences=None) -> Tuple[Tensor, Tensor, Tensor]:
     """
     Compute or load SAE results for a given model, layer, and number of stories.
 
@@ -98,7 +112,7 @@ def compute_or_load_sae(cfg) -> Tuple[Tensor, Tensor, Tensor]:
     sae_path = os.path.join(INTERIM_DIR, f"sae_activations_{cfg.sae_file_str}.pt")
 
     if cfg.force_recompute or not os.path.exists(sae_path):
-        llm_act_LBPD, dataset_story_idxs, tokens_BP = compute_or_load_llm_artifacts(cfg)
+        llm_act_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
         llm_act_BPD = llm_act_LBPD[cfg.layer_idx]
 
         # Load SAE
@@ -303,6 +317,18 @@ def compute_centered_svd(
             torch.cuda.empty_cache()
 
     return U_LbC, S_LC, Vt_LCD, means_LD
+
+def compute_centered_svd_single_layer(
+    act_pD: Tensor,
+    verbose: bool = False,
+) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    """
+    Compute SVD for a single layer of activations.
+    """
+
+    act_LpD = act_pD.unsqueeze(0)
+    U_LpC, S_LC, Vt_LCD, means_LD = compute_centered_svd(act_LpD, layer_idx=0, verbose=verbose)
+    return U_LpC[0], S_LC[0], Vt_LCD[0], means_LD[0]
 
 
 def compute_or_load_svd(

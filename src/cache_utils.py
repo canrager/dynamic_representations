@@ -12,6 +12,20 @@ from datasets import load_dataset
 from src.model_utils import load_nnsight_model
 from src.project_config import DEVICE, MODELS_DIR, INTERIM_DIR, INPUTS_DIR
 
+def tokenize_from_sequences(tokenizer, sequences):
+    # Tokenize a list of sequences, using all tokens, no max lenght
+    tokenized = tokenizer.batch_encode_plus(
+        sequences,
+        padding=True,
+        padding_side="right",
+        truncation=True,
+        return_tensors="pt",
+    )
+    inputs_BP = tokenized["input_ids"]
+    masks_BP = tokenized["attention_mask"]
+    selected_story_idxs = list(range(len(sequences)))
+    return inputs_BP, masks_BP, selected_story_idxs
+
 def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens, hf_text_identifier="story"):
     # Use stories with the same amounts of tokens
     # For equal weighting across position and avoiding padding errors
@@ -34,11 +48,12 @@ def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens, hf_text_id
             selected_story_idxs.append(story_idx)
 
     inputs_BP = torch.stack(inputs_BP)
+    masks_BP = torch.ones_like(inputs_BP)
 
-    return inputs_BP, selected_story_idxs
+    return inputs_BP, masks_BP, selected_story_idxs
 
 
-def collect_from_local(tokenizer, dataset_name, num_sentences, num_tokens):
+def collect_from_local_with_length_filter(tokenizer, dataset_name, num_sentences, num_tokens):
     with open(os.path.join(INPUTS_DIR, dataset_name), "r") as f:
         all_sentences = json.load(f)["sentences"]
     print(f"Loaded {len(all_sentences)} sentences.")
@@ -48,6 +63,7 @@ def collect_from_local(tokenizer, dataset_name, num_sentences, num_tokens):
 
     min_length = 1e5
     max_length = 0
+
     for sentence_idx, sentence_item in enumerate(all_sentences):
         if len(inputs_BP) >= num_sentences:
             break
@@ -73,15 +89,48 @@ def collect_from_local(tokenizer, dataset_name, num_sentences, num_tokens):
 
     print(f"Tokenized {len(inputs_BP)} sentences")
     inputs_BP = torch.stack(inputs_BP)
-    return inputs_BP, selected_sentence_idxs
+    masks_BP = torch.ones_like(inputs_BP)
+    return inputs_BP, masks_BP, selected_sentence_idxs
+
+def tokenize_with_pad_from_local(tokenizer, dataset_name, num_sentences=None, num_tokens=64):
+    # Num tokens == all
+    with open(os.path.join(INPUTS_DIR, dataset_name), "r") as f:
+        all_sentences = json.load(f)["sentences"]
+    print(f"Loaded {len(all_sentences)} sentences.")
+
+    if num_sentences is not None:
+        all_sentences = all_sentences[:num_sentences]
+
+    tokenized = tokenizer.batch_encode_plus(
+        all_sentences,
+        padding=True,
+        padding_side="right",
+        truncation=True,
+        max_length=num_tokens,
+        return_tensors="pt",
+    )
+
+    inputs_BP = tokenized["input_ids"]
+    masks_BP = tokenized["attention_mask"]
+    selected_sentence_idxs = list(range(len(all_sentences)))
+    return inputs_BP, masks_BP, selected_sentence_idxs
+
+def collect_from_local(tokenizer, dataset_name, num_sentences, num_tokens):
+    if num_tokens is not None:
+        return collect_from_local_with_length_filter(tokenizer, dataset_name, num_sentences, num_tokens)
+    else:
+        return tokenize_with_pad_from_local(tokenizer, dataset_name, num_sentences)
+
 
 def batch_llm_cache(
     model: LanguageModel,
     submodules: List[Module],
-    inputs_BP: BatchEncoding,
+    inputs_BP: Tensor,
+    masks_BP: Tensor,
     hidden_dim: int,
     batch_size: int,
     device: str,
+    debug: bool = False,
 ) -> Tensor:
     all_acts_LBPD = torch.zeros(
         (
@@ -91,18 +140,34 @@ def batch_llm_cache(
             hidden_dim,
         )
     )
+    all_masks_BP = torch.zeros(
+        (
+            inputs_BP.shape[0],
+            inputs_BP.shape[1],
+        )
+    )
 
     for batch_start in trange(
         0, inputs_BP.shape[0], batch_size, desc="Batched Forward"
     ):
         batch_end = batch_start + batch_size
         batch_input_ids = inputs_BP[batch_start:batch_end].to(device)
-        batch_mask = torch.ones_like(batch_input_ids)
+        batch_mask = masks_BP[batch_start:batch_end].to(device)
         batch_inputs = {
             "input_ids": batch_input_ids,
             "attention_mask": batch_mask,
         }
 
+        if debug:
+            print(f"computing activations for batch {batch_start} to {batch_end}. Tokens:")
+            for ids_P in batch_input_ids:
+                decoded_tokens = [model.tokenizer.decode(id, skip_special_tokens=False) for id in ids_P]
+                print(decoded_tokens)
+                print()
+
+            print(f"batch_mask:\n {batch_mask}")
+
+        all_masks_BP[batch_start:batch_end] = batch_mask
         with (
             torch.inference_mode(),
             model.trace(batch_inputs, scan=False, validate=False),
@@ -111,7 +176,8 @@ def batch_llm_cache(
                 all_acts_LBPD[l, batch_start:batch_end] = sm.output[0].save()
 
     all_acts_LBPD = all_acts_LBPD.to("cpu")
-    return all_acts_LBPD
+    all_masks_BP = all_masks_BP.to("cpu")
+    return all_acts_LBPD, all_masks_BP
 
 
 def batch_sae_cache(
@@ -141,7 +207,7 @@ def batch_sae_cache(
     for i in trange(0, len(act_flattened), batch_size, desc="SAE forward"):
         batch = act_flattened[i : i + batch_size]
         batch = batch.to(device)
-        batch_sae = sae.forward(batch)
+        batch_sae = sae(batch)
         out_flattened.append(batch_sae.sae_out.detach().cpu())
         fvu_flattened.append(batch_sae.fvu.detach().cpu())
         latent_acts_flattened.append(batch_sae.latent_acts.detach().cpu())
@@ -149,10 +215,10 @@ def batch_sae_cache(
         if i == 0:
             print(f"batch_sae {batch_sae}")
 
-    out_flattened = torch.cat(out_flattened, dim=0)
-    fvu_flattened = torch.cat(fvu_flattened, dim=0)
-    latent_acts_flattened = torch.cat(latent_acts_flattened, dim=0)
-    latent_indices_flattened = torch.cat(latent_indices_flattened, dim=0)
+    out_flattened = torch.stack(out_flattened)
+    fvu_flattened = torch.stack(fvu_flattened)
+    latent_acts_flattened = torch.stack(latent_acts_flattened)
+    latent_indices_flattened = torch.stack(latent_indices_flattened)
 
     out = out_flattened.reshape(B, P, D)
     fvu = fvu_flattened.reshape(B, P)
@@ -162,20 +228,25 @@ def batch_sae_cache(
     return out, fvu, latent_acts, latent_indices
 
 
-def compute_llm_artifacts(cfg):
+def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
     # Load model
     model, submodules, hidden_dim = load_nnsight_model(cfg)
 
     # Load dataset
-    if cfg.dataset_name.endswith(".json"):
-        inputs_BP, selected_story_idxs = collect_from_local(
+    if loaded_dataset_sequences is not None:
+        inputs_BP, masks_BP, selected_story_idxs = tokenize_from_sequences(
+            tokenizer=model.tokenizer,
+            sequences=loaded_dataset_sequences
+        )
+    elif cfg.dataset_name.endswith(".json"):
+        inputs_BP, masks_BP, selected_story_idxs = collect_from_local(
             tokenizer=model.tokenizer,
             dataset_name=cfg.dataset_name,
             num_sentences=cfg.num_total_stories,
             num_tokens=cfg.num_tokens_per_story
         )
     else:
-        inputs_BP, selected_story_idxs = collect_from_hf(
+        inputs_BP, masks_BP, selected_story_idxs = collect_from_hf(
             tokenizer=model.tokenizer, 
             dataset_name=cfg.dataset_name, 
             num_stories=cfg.num_total_stories, 
@@ -184,13 +255,15 @@ def compute_llm_artifacts(cfg):
         )
 
     # Call batch_act_cache
-    all_acts_LbPD = batch_llm_cache(
+    all_acts_LbPD, all_masks_BP = batch_llm_cache(
         model=model,
         submodules=submodules,
         inputs_BP=inputs_BP,
+        masks_BP=masks_BP,
         hidden_dim=hidden_dim,
         batch_size=cfg.llm_batch_size,
         device=DEVICE,
+        debug=cfg.debug,
     )
 
     # Save artifacts
@@ -200,5 +273,7 @@ def compute_llm_artifacts(cfg):
         torch.save(selected_story_idxs, f, pickle_protocol=5)
     with open(os.path.join(INTERIM_DIR, f"tokens_{cfg.input_file_str}.pt"), "wb") as f:
         torch.save(inputs_BP, f, pickle_protocol=5)
+    with open(os.path.join(INTERIM_DIR, f"masks_{cfg.input_file_str}.pt"), "wb") as f:
+        torch.save(all_masks_BP, f, pickle_protocol=5)
 
-    return all_acts_LbPD, selected_story_idxs, inputs_BP
+    return all_acts_LbPD, all_masks_BP, inputs_BP, selected_story_idxs

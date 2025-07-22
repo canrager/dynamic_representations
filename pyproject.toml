@@ -14,7 +14,8 @@ dependencies = [
     "nnsight>=0.4.6",
     "matplotlib",
     "zstandard",
-    "scikit-dimension"
+    "scikit-dimension",
+    "spacy"
 ]
 
 [build-system]
