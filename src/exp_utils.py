@@ -25,16 +25,17 @@ def compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=None) -> Tuple[T
 
     artifact_fnames = {
         "act": f"activations_{cfg.input_file_str}.pt",
-        "mask": f"mask_{cfg.input_file_str}.pt",
+        "mask": f"masks_{cfg.input_file_str}.pt",
         "tokens": f"tokens_{cfg.input_file_str}.pt",
         "all_idxs": f"story_idxs_{cfg.input_file_str}.pt",
     }
     artifact_dirs = {
         k: os.path.join(INTERIM_DIR, v) for k, v in artifact_fnames.items()
     }
-    is_existing = all([os.path.exists(d) for d in artifact_dirs.values()])
+    is_existing_each = [os.path.exists(d) for d in artifact_dirs.values()]
+    is_existing = all(is_existing_each)
 
-    if not is_existing:
+    if not is_existing or cfg.force_recompute:
         acts_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
     else:
         acts_LBPD = torch.load(artifact_dirs["act"], weights_only=False).to("cpu")

@@ -15,7 +15,8 @@ dependencies = [
     "matplotlib",
     "zstandard",
     "scikit-dimension",
-    "spacy"
+    "spacy",
+    "anthropic",
 ]
 
 [build-system]
