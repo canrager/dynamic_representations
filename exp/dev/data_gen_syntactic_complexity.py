@@ -8,7 +8,7 @@ import anthropic
 import os
 import json
 import random
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from src.project_config import INPUTS_DIR
 
 def _query_claude(prompt: str, max_tokens: int = 100) -> str:
@@ -166,12 +166,126 @@ Return only the JSON array, nothing else."""
                 raise e
             continue
 
+def generate_phrasal_verb_variations_from_template(verb: str, particle: str, subject: str, obj: str, time: str, location: str) -> List[str]:
+    """
+    Generate phrasal verb variations without API calls using predefined templates.
+    
+    Args:
+        verb: The main verb (e.g., "picked")
+        particle: The particle (e.g., "up")
+        subject: The subject of the sentence
+        obj: The object in the sentence
+        time: The time reference
+        location: The location reference
+    
+    Returns:
+        A list of phrasal verb separation variations
+    """
+    variations = [
+        f"{subject} {verb} {particle} the {obj} from the {location} {time}.",
+        # f"{subject} {verb} the {obj} {particle} from the {location} {time}.",
+        # f"{subject} {verb} the {obj} from the {location} {particle} {time}.",
+        f"{subject} {verb} the {obj} from the {location} {time} {particle}."
+    ]
+    condensed = f"{subject} {verb} {particle} the {obj} from the {location} {time} {particle}."
+    # condensed = f"{subject} {verb} {particle} the {obj} {particle} from the {location} {particle} {time} {particle}."
+    
+    return variations, condensed
+
+def generate_dataset_from_template() -> int:
+    """
+    Generate dataset without API calls using predefined phrasal verbs and templates.
+    Provides master templates that can be used directly in experiment files.
+    
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    # Define 10 diverse words for each category
+    subjects = ["John", "Sarah", "The teacher", "My neighbor", "The detective", "The artist", "Her brother", "The scientist", "The chef", "The musician"]
+    objects = ["trash", "books", "flowers", "tools", "letters", "dishes", "paintings", "equipment", "groceries", "instruments"]
+    times = ["yesterday", "last week", "this morning", "earlier today", "last month", "two days ago", "last evening", "recently", "last Friday", "an hour ago"]
+    locations = ["backyard", "kitchen", "office", "garden", "garage", "studio", "laboratory", "restaurant", "library", "park"]
+    
+    # Define 10 phrasal verbs as verb + particle tuples
+    phrasal_verbs: List[Tuple[str, str]] = [
+        ("picked", "up"),
+        ("threw", "away"),
+        ("brought", "over"),
+        ("put", "down"),
+        ("took", "out"),
+        ("handed", "in"),
+        ("gave", "back"),
+        ("turned", "on"),
+        ("shut", "off"),
+        ("looked", "up")
+    ]
+    
+    # Generate 50 random combinations
+    all_results = []
+    
+    try:
+        for i in range(50):
+            subject = random.choice(subjects)
+            obj = random.choice(objects)
+            time = random.choice(times)
+            location = random.choice(locations)
+            verb, particle = random.choice(phrasal_verbs)
+            
+            print(f"Generating combination {i+1}/50: {subject}, {obj}, {time}, {location}, {verb} {particle}")
+            
+            # Generate all template variations
+            template_variations, condensed = generate_phrasal_verb_variations_from_template(verb, particle, subject, obj, time, location)
+            
+            # Store results with master template structure
+            result = {
+                "combination_id": i + 1,
+                "components": {
+                    "subject": subject,
+                    "verb": verb,
+                    "particle": particle,
+                    "object": obj,
+                    "time": time,
+                    "location": location,
+                },
+                "condensed_sentence": condensed,
+                "phrasal_verb_variations": template_variations
+            }
+            all_results.append(result)
+        
+        # Write results to INPUTS_DIR as JSON
+        output_file = os.path.join(INPUTS_DIR, "syntactic_complexity_phrasal_verbs_from_template.json")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(all_results, f, indent=2, ensure_ascii=False)
+        
+        print(f"Generated {len(all_results)} combinations with phrasal verb variations")
+        print(f"Results saved to: {output_file}")
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+    
+    return 0
+
 def main():
     # Define 10 diverse words for each category
     subjects = ["John", "Sarah", "the teacher", "my neighbor", "the detective", "the artist", "her brother", "the scientist", "the chef", "the musician"]
     objects = ["trash", "books", "flowers", "tools", "letters", "dishes", "paintings", "equipment", "groceries", "instruments"]
     times = ["yesterday", "last week", "this morning", "earlier today", "last month", "two days ago", "last evening", "recently", "last Friday", "an hour ago"]
     locations = ["backyard", "kitchen", "office", "garden", "garage", "studio", "laboratory", "restaurant", "library", "park"]
+    
+    # Define 10 phrasal verbs as verb + particle tuples
+    phrasal_verbs: List[Tuple[str, str]] = [
+        ("picked", "up"),
+        ("threw", "away"),
+        ("brought", "over"),
+        ("put", "down"),
+        ("took", "out"),
+        ("handed", "in"),
+        ("gave", "back"),
+        ("turned", "on"),
+        ("shut", "off"),
+        ("looked", "up")
+    ]
     
     # Generate 50 random combinations
     all_results = []
@@ -220,4 +334,4 @@ def main():
     return 0
 
 if __name__ == "__main__":
-    exit(main())
+    exit(generate_dataset_from_template())
