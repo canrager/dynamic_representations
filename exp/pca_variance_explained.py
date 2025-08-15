@@ -9,28 +9,75 @@ from src.exp_utils import (
     load_activation_split,
 )
 from tqdm import trange
+from dataclasses import dataclass
+
+@dataclass
+class LLMConfig():
+    name: str
+    layer_idx: int
+    batch_size: int
+    revision: Optional[str] = None
+
+@dataclass
+class DatasetConfig():
+    name: str
+    hf_text_identifier: str
 
 
 class Config:
     def __init__(self):
+        self.debug = False
+
         ### Model
         # self.model_name: str = "openai-community/gpt2"
         # self.layer_idx: int = 6
-        self.llm_name: str = "meta-llama/Llama-3.1-8B"
+        # self.llm_name: str = "meta-llama/Llama-3.1-8B"
+        # self.llm_name: str = "Qwen/Qwen2.5-7B"
+        self.llm_name: str = "mistralai/Mistral-7B-v0.1"
+        # self.llm_name: str = "google/gemma-2-2b"
         self.layer_idx: int = 12
         self.llm_batch_size: str = 100
+        self.llm_revision: Optional[str] = None
+
+        # ## OR Multiple models
+        # self.llm_name = "many_llms"
+        # self.layer_idx = -1
+        # self.llm_revision = None
+        # self.llms = [
+        #     # LLMConfig("openai-community/gpt2", layer_idx=6, batch_size=100),
+        #     # LLMConfig("google/gemma-2-2b", layer_idx=12, batch_size=100),
+        #     LLMConfig("Qwen/Qwen2.5-7B", layer_idx=12, batch_size=100),
+        #     # LLMConfig("meta-llama/Llama-3.1-8B", layer_idx=6, batch_size=100),
+        #     # LLMConfig("meta-llama/Llama-3.1-8B", layer_idx=12, batch_size=100),
+        #     # LLMConfig("meta-llama/Llama-3.1-8B", layer_idx=18, batch_size=100),
+        #     # LLMConfig("meta-llama/Llama-3.1-8B", layer_idx=24, batch_size=100),
+        #     # LLMConfig("meta-llama/Llama-3.1-8B", layer_idx=31, batch_size=100),
+        #     # LLMConfig("allenai/OLMo-2-1124-7B", layer_idx=12, batch_size=100, revision="stage1-step150-tokens1B"),
+        #     # LLMConfig("allenai/OLMo-2-1124-7B", layer_idx=12, batch_size=100, revision="stage1-step10000-tokens42B"),
+        #     # LLMConfig("allenai/OLMo-2-1124-7B", layer_idx=12, batch_size=100, revision="stage1-step12000-tokens51B"),
+        #     # LLMConfig("allenai/OLMo-2-1124-7B", layer_idx=12, batch_size=100, revision="stage1-step105000-tokens441B"),
+        #     # LLMConfig("allenai/OLMo-2-1124-7B", layer_idx=12, batch_size=100),
+        # ]
 
         ### Dataset
         # self.dataset_name: str = "SimpleStories/SimpleStories"
-        # self.dataset_name: str = "monology/pile-uncopyrighted"
-        self.dataset_name: str = "NeelNanda/code-10k"
+        self.dataset_name: str = "monology/pile-uncopyrighted"
+        # self.dataset_name: str = "NeelNanda/code-10k"
         self.hf_text_identifier: str = "text"
-        self.num_total_stories: int = 100
 
+
+        # self.dataset_name = "many_datasets"
+        # self.datasets = [
+        #     # DatasetConfig("SimpleStories/SimpleStories", "story"),
+        #     DatasetConfig("monology/pile-uncopyrighted", "text"),
+        #     # DatasetConfig("NeelNanda/code-10k", "text")
+        # ]
+        
+        self.num_total_stories: int = 100
         self.selected_story_idxs: Optional[List[int]] = None
-        self.omit_BOS_token: bool = True
-        self.num_tokens_per_story: int = 75
-        self.do_train_test_split: bool = False
+        self.omit_BOS_token: bool = False
+        self.num_tokens_per_story: int = 25
+        self.do_train_test_split: bool = True
         self.num_train_stories: int = 75
         self.force_recompute: bool = (
             True  # Always leave True, unless iterations with experiment iteration speed. force_recompute = False has the danger of using precomputed results with incorrect parameters.
@@ -42,8 +89,8 @@ class Config:
         self.reconstruction_thresholds: List[float] = [0.9]
         # window_size needs to be an iterable, use [None] to disable
         # window_size = [1, 2, 3, 5, 10, 20]
-        self.window_sizes: List[Optional[int]] = [None, 2, 5, 10, 25, 50]
-        # self.window_sizes: List[Optional[int]] = [None] 
+        self.window_sizes: List[Optional[int]] = [None, 1, 5, 10, 25, 50]
+        # self.window_sizes: List[Optional[int]] = [1, None] 
         self.include_test_token_t_in_train_pca: bool = False
         self.do_sort_pca_components_per_token: bool = True
 
@@ -53,10 +100,6 @@ class Config:
         ### Assertions
         if len(self.reconstruction_thresholds) > 1:
             assert self.num_test_stories == 1
-
-        assert (
-            self.intrinsic_dimension_mode in self.available_intrinsic_dimension_modes
-        ), f"Invalid intrinsic dimension mode: {self.intrinsic_dimension_mode}"
 
         ### String summarizing the parameters for saving results
         model_str = self.llm_name.split("/")[-1]
@@ -227,7 +270,7 @@ def plot_intrinsic_dimension(
     """
     Plot mean number of PCA components required across all stories with 95% confidence intervals.
     """
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(8, 6))
 
     W, P, T = id_mean_WPT.shape
 
@@ -286,14 +329,77 @@ def plot_intrinsic_dimension(
 
     plt.tight_layout()
 
-    save_fname = f"intrinsic_dimension_{cfg.output_str}"
+    save_fname = f"intrinsic_dimension_{cfg.output_file_str}"
     fig_path = os.path.join(PLOTS_DIR, f"{save_fname}.png")
     plt.savefig(fig_path, dpi=80, bbox_inches="tight")
     print(f"Saved mean components across stories plot to {fig_path}")
     plt.close()
 
 
-if __name__ == "__main__":
+def plot_id_multiple_models(id_result_list, cfg):
+    """
+    Plot intrinsic dimension for multiple models at a single window size.
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    color_idx = 0
+    for results in id_result_list:
+        id_mean_PT = results["id_mean_PT"]
+        id_ci_PT = results["id_ci_PT"]
+        
+        P, T = id_mean_PT.shape
+        
+        # Plot for each threshold
+        for t_idx, threshold in enumerate(cfg.reconstruction_thresholds):
+            arange_P = th.arange(P)
+            mean_components_P = id_mean_PT[:, t_idx].cpu()
+            ci_components_P = id_ci_PT[:, t_idx].cpu()
+            
+            # Drop missing values
+            is_valid_P = mean_components_P >= 0
+            arange_P = arange_P[is_valid_P]
+            mean_components_P = mean_components_P[is_valid_P]
+            ci_components_P = ci_components_P[is_valid_P]
+            
+            # Get color from matplotlib's default color cycle
+            color = f"C{color_idx}"
+            
+            # Get label - simplified model name
+            model_short_name = results["llm_name"].split("/")[-1]
+            dataset_short_name = results["dataset_name"].split("/")[-1].split(".")[0]
+            label = f"{model_short_name} L{results["layer_idx"]}, {dataset_short_name}"
+            
+            # Plot mean line
+            ax.plot(arange_P, mean_components_P, linewidth=2, color=color)
+            ax.scatter(arange_P, mean_components_P, label=label, color=color)
+            
+            # Plot 95% CI band
+            ax.fill_between(
+                arange_P,
+                mean_components_P - ci_components_P,
+                mean_components_P + ci_components_P,
+                alpha=0.2,
+                color=color,
+            )
+            
+            color_idx += 1
+    
+    ax.set_xlabel("Token Position")
+    ax.set_ylabel("Mean Number of PCA Components Required")
+    ax.set_title(f"Intrinsic Dimension Comparison Across Models (95% CI)\n {int(threshold*100)}% expvar")
+    ax.legend(loc="center right")
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    save_fname = f"intrinsic_dimension_multiple_models_{cfg.dataset_name.split('/')[-1]}"
+    fig_path = os.path.join(PLOTS_DIR, f"{save_fname}.png")
+    plt.savefig(fig_path, dpi=80, bbox_inches="tight")
+    print(f"Saved multiple models comparison plot to {fig_path}")
+    plt.close()
+
+
+def main_id_multiple_ws():
     cfg = Config()
 
     # Load activations
@@ -320,3 +426,52 @@ if __name__ == "__main__":
         id_ci_WPT=id_ci_WPT,
         cfg=cfg,
     )
+
+def main_id_multiple_models():
+    cfg = Config()
+
+    # Load activations and compute intrinsic dimension for each model
+    id_result_list = []
+    for llm_cfg in cfg.llms:
+        for ds_cfg in cfg.datasets:
+            # Update config for current model
+            cfg.llm_name = llm_cfg.name
+            cfg.layer_idx = llm_cfg.layer_idx
+            cfg.llm_batch_size = llm_cfg.batch_size
+            cfg.dataset_name = ds_cfg.name
+            cfg.hf_text_identifier = ds_cfg.hf_text_identifier
+            cfg.llm_revision = llm_cfg.revision
+            
+            (
+                act_train_LBPD,
+                act_test_LBPD,
+                mask_train_BP,
+                mask_test_BP,
+                tokens_test_BP,
+                num_test_stories,
+                dataset_idxs_test,
+            ) = load_activation_split(cfg)
+
+            # Compute intrinsic dimension for a single window (no window)
+            id_mean_PT, id_ci_PT = compute_intrinsic_dimension(
+                act_train_LBPD=act_train_LBPD,
+                act_test_LBPD=act_test_LBPD,
+                cfg=cfg,
+                window_size=None
+            )
+
+            id_result_list.append({
+                "id_mean_PT": id_mean_PT,
+                "id_ci_PT": id_ci_PT, 
+                "llm_name": llm_cfg.name,
+                "layer_idx": llm_cfg.layer_idx,
+                "dataset_name": ds_cfg.name
+            })
+
+    # Plot results
+    plot_id_multiple_models(id_result_list, cfg)
+
+
+if __name__ == "__main__":
+    main_id_multiple_ws()
+    # main_id_multiple_models()

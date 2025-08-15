@@ -9,9 +9,11 @@ from transformers import (
     AutoModelForCausalLM,
     BitsAndBytesConfig,
 )
-from src.project_config import MODELS_DIR, DEVICE
 
 from sparsify import Sae
+from src.project_config import MODELS_DIR, DEVICE
+from src.custom_saes.relu_sae import load_dictionary_learning_relu_sae
+from src.custom_saes.topk_sae import load_dictionary_learning_topk_sae
 
 
 def load_tokenizer(llm_name: str, cache_dir: str):
@@ -28,6 +30,7 @@ def load_tokenizer(llm_name: str, cache_dir: str):
 def load_nnsight_model(cfg):
     model = LanguageModel(
         cfg.llm_name,
+        revision=cfg.llm_revision,
         cache_dir=MODELS_DIR,
         device_map=DEVICE,  # Use the defined device
         dispatch=True,
@@ -42,13 +45,15 @@ def load_nnsight_model(cfg):
         # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
         model.tokenizer = load_tokenizer(cfg.llm_name, cache_dir=MODELS_DIR)
 
-    elif "Llama" in cfg.llm_name:
+    elif any([s in cfg.llm_name.lower() for s in ["llama", "gemma", "allenai", "qwen", "mistral"]]):
         print(model)
         print(model.config)
         hidden_dim = model.config.hidden_size
         submodules = [
             model.model.layers[l] for l in range(model.config.num_hidden_layers)
         ]
+    else:
+        raise ValueError("Unknown model")
 
     return model, submodules, hidden_dim
 
@@ -114,8 +119,30 @@ def load_hf_model(
     return model, tokenizer
 
 
-def load_sae(sae_name, layer_idx):
-    sae_hookpoint_str = f"layers.{layer_idx}"
-    sae = Sae.load_from_hub(sae_name, sae_hookpoint_str, cache_dir=MODELS_DIR)
-    sae = sae.to(DEVICE)
+def load_sae(cfg):
+    if "eleuther" in cfg.sae_name.lower():
+        sae_hookpoint_str = f"layers.{cfg.layer_idx}"
+        sae = Sae.load_from_hub(cfg.sae_name, sae_hookpoint_str, cache_dir=MODELS_DIR)
+        sae = sae.to(DEVICE)
+    elif "saebench" in cfg.sae_name.lower():
+        if cfg.sae_architecture == "topk":
+            sae = load_dictionary_learning_topk_sae(
+                repo_id=cfg.sae_repo_id,
+                filename=cfg.sae_filename,
+                model_name=cfg.llm_name,
+                device=DEVICE,
+                layer=cfg.layer_idx,
+                dtype=cfg.dtype
+            )
+        elif cfg.sae_architecture == "relu":
+            sae = load_dictionary_learning_relu_sae(
+                repo_id=cfg.sae_repo_id,
+                filename=cfg.sae_filename,
+                model_name=cfg.llm_name,
+                device=DEVICE,
+                layer=cfg.layer_idx,
+                dtype=cfg.dtype
+            )
+    else:
+        raise NotImplementedError
     return sae

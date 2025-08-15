@@ -2,7 +2,8 @@ import torch
 from src.model_utils import load_hf_model
 from src.project_config import DEVICE, MODELS_DIR
 
-model_name = "openai-community/gpt2"
+# model_name = "openai-community/gpt2"
+model_name = "mistralai/Mistral-7B-v0.1"
 # model_name = "google/gemma-2-2b"
 # model_name = "google/gemma-3-12b-pt"
 # model_name = "meta-llama/Llama-3.1-8B"

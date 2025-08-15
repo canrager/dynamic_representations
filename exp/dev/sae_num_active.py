@@ -59,41 +59,9 @@ class Config():
             + f"_didx_{story_idxs_str}"
         )
 
-def plot_num_active_latents(latent_acts_BPS, cfg):
-    # Find active latents
-    latent_active_threshs_T = th.tensor(cfg.latent_active_threshs)
-    is_active_BPST = latent_acts_BPS[:, :, :, None] > latent_active_threshs_T[None, None, None, :]
-    num_active_BPT = is_active_BPST.sum(dim=-2)
-
-    # Mean, std, CI over batch
-    num_active_mean_PT = num_active_BPT.float().mean(dim=0)
-    num_active_std_PT = num_active_BPT.float().std(dim=0)
-    B = num_active_BPT.shape[0]
-    num_active_ci_PT = 1.96 * num_active_std_PT / (B**0.5)
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-    for t_idx, t in enumerate(cfg.latent_active_threshs):
-        num_active_mean_P = num_active_mean_PT[:, t_idx]
-        num_active_ci_P = num_active_ci_PT[:, t_idx]
-        ax.plot(num_active_mean_P, label=f"active above {t}")
-        ax.fill_between(
-            range(len(num_active_mean_P)),
-            num_active_mean_P - num_active_ci_P,
-            num_active_mean_P + num_active_ci_P,
-            alpha=0.2
-        )
 
     
-    ax.set_xlabel("Token position")
-    ax.set_ylabel("Number of active latents")
-    ax.set_title(f"Number of active latents over tokens\nsae {cfg.sae_name}, dataset {cfg.dataset_name}")
-    ax.legend(loc='upper right')
-    ax.grid(True, alpha=0.3)
 
-    save_dir = os.path.join(PLOTS_DIR, f"num_active_latents_{cfg.output_file_str}.png")
-    plt.savefig(save_dir, dpi=80)
-    print(f"\nSaved figure to {save_dir}")
-    plt.close()
 
 
 def plot_fvu(fvu_BP, cfg):

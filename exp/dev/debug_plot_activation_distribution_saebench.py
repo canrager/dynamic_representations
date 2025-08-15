@@ -38,12 +38,20 @@ class Config:
 
         self.dtype = torch.float32
 
+        self.sae_architecture = "topk"
         self.sae_repo_id = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
-        # self.sae_filename = "gemma-2-2b_top_k_width-2pow14_date-0107/resid_post_layer_12/trainer_2/ae.pt"
-        self.sae_filename = "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_4/ae.pt"
-        self.sae_architecture = "relu"
+        self.sae_filename = "gemma-2-2b_top_k_width-2pow14_date-0107/resid_post_layer_12/trainer_2/ae.pt"
+        self.sae_name: str = "saebench_gemma-2-2b_topk-80_width-2pow14_layer_12_trainer_2"
+        self.d_sae: int = 192 # 16384
 
-        self.sae_name: str = "gemma-2-2b_top_k_width-2pow14_date-0107_resid_post_layer_12_trainer_2"
+        # self.sae_architecture = "relu"
+        # self.sae_repo_id = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
+        # self.sae_filename = "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_4/ae.pt"
+        # self.sae_name: str = "saebench_gemma-2-2b_relu_width-2pow14_layer_12_trainer_4"
+        # self.d_sae: int = 16384
+
+        # self.sae_name: str = "gemma-2-2b_top_k_width-2pow14_date-0107_resid_post_layer_12_trainer_2"
+
         self.sae_batch_size: int = 100
 
         ### Dataset
@@ -357,39 +365,72 @@ def compute_or_load_sae(cfg) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
 def plot_activation_distribution(latent_act_BPS, cfg):
     latent_act_BPS = latent_act_BPS.float().detach().cpu()
 
-    if cfg.sort_variance:
-        latent_act_BPS, _ = torch.sort(latent_act_BPS, dim=-1, descending=True)
+    # Create figure with two subplots side by side
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
-    latent_act_mean_S = latent_act_BPS.mean(dim=(0, 1))
-    latent_act_std_S = latent_act_BPS.std(dim=(0, 1))
+    # Left subplot: Sorted variance (cfg.sort_variance=True)
+    latent_act_sorted_BPS, _ = torch.sort(latent_act_BPS, dim=-1, descending=True)
+    latent_act_mean_sorted_S = latent_act_sorted_BPS.mean(dim=(0, 1))
+    latent_act_std_sorted_S = latent_act_sorted_BPS.std(dim=(0, 1))
+    latent_sorted_max_act_var = latent_act_sorted_BPS.max(-1).values.var()
     B, P, S = latent_act_BPS.shape
-    latent_act_ci_S = 1.96 * latent_act_std_S / (B**0.5)  # only stories are independent
+    latent_act_ci_sorted_S = 1.96 * latent_act_std_sorted_S / (B**0.5)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(latent_act_mean_S, color="blue")
-    ax.scatter(
-        range(len(latent_act_mean_S)),
-        latent_act_mean_S,
+    ax1.plot(latent_act_mean_sorted_S, color="blue")
+    ax1.scatter(
+        range(len(latent_act_mean_sorted_S)),
+        latent_act_mean_sorted_S,
         label="activation value",
         color="blue",
     )
-    ax.fill_between(
+    ax1.fill_between(
+        range(len(latent_act_mean_sorted_S)),
+        latent_act_mean_sorted_S - latent_act_ci_sorted_S,
+        latent_act_mean_sorted_S + latent_act_ci_sorted_S,
+        alpha=0.2,
+        label=f"95% CI",
+        color="blue",
+    )
+    ax1.set_xlabel("rank")
+    ax1.set_ylabel("mean activation magnitude")
+    ax1.set_title(f"Sorted by magnitude \n(variance across tokens for max latent act:{latent_sorted_max_act_var})")
+    ax1.legend(loc="upper right")
+    ax1.grid(True, alpha=0.3)
+
+    # Right subplot: Not sorted (cfg.sort_variance=False)
+    latent_act_mean_S = latent_act_BPS.mean(dim=(0, 1))
+    latent_act_std_S = latent_act_BPS.std(dim=(0, 1))
+    latent_max_act_var = latent_act_BPS.max(-1).values.var()
+    latent_act_ci_S = 1.96 * latent_act_std_S / (B**0.5)
+
+    ax2.plot(latent_act_mean_S, color="red")
+    ax2.scatter(
+        range(len(latent_act_mean_S)),
+        latent_act_mean_S,
+        label="activation value",
+        color="red",
+    )
+    ax2.fill_between(
         range(len(latent_act_mean_S)),
         latent_act_mean_S - latent_act_ci_S,
         latent_act_mean_S + latent_act_ci_S,
         alpha=0.2,
         label=f"95% CI",
-        color="blue",
+        color="red",
+    )
+    ax2.set_xlabel("latent index")
+    ax2.set_ylabel("mean activation magnitude")
+    ax2.set_title(f"Original order \n(variance across tokens for max latent act:{latent_max_act_var})")
+    ax2.legend(loc="upper right")
+    ax2.grid(True, alpha=0.3)
+
+    # Main title for the entire figure
+    fig.suptitle(
+        f"SAE Latent Activations\nsae {cfg.sae_str}, dataset {cfg.dataset_str}",
+        fontsize=14
     )
 
-    # ax.set_xlim((-1, 200))
-    ax.set_xlabel("rank")
-    ax.set_ylabel("mean activation magnitude")
-    ax.set_title(
-        f"Activation, mean over batch and token pos, sorted by magnitude\nsae {cfg.sae_str}, dataset {cfg.dataset_str}"
-    )
-    ax.legend(loc="upper right")
-    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
 
     save_dir = os.path.join(
         PLOTS_DIR, f"activation_distribution_{cfg.output_file_str}.png"

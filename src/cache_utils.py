@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.nn import Module
 from transformers import BatchEncoding
 from datasets import load_dataset
+import gc
 
 from src.model_utils import load_nnsight_model
 from src.project_config import DEVICE, MODELS_DIR, INTERIM_DIR, INPUTS_DIR
@@ -180,7 +181,7 @@ def batch_llm_cache(
     return all_acts_LBPD, all_masks_BP
 
 
-def batch_sae_cache(
+def batch_sae_cache_eleuther(
     sae, act_BPD: Tensor, batch_size: int = 100, device: str = "cuda"
 ) -> Tuple[Tensor, Tensor, Tensor]:
     """
@@ -226,6 +227,50 @@ def batch_sae_cache(
     latent_indices = latent_indices_flattened.reshape(B, P, K)
 
     return out, fvu, latent_acts, latent_indices
+
+
+def batch_sae_cache_saebench(
+    sae, act_BPD: Tensor, batch_size: int = 100, device: str = "cuda"
+) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    """
+    Process activations through SAE in batches.
+    """
+    B, P, D = act_BPD.shape
+
+    sae_outs = []
+    fvus = []
+    latent_actss = []
+    latent_indicess = []
+
+    for i in trange(0, B, batch_size, desc="SAE forward"):
+        batch = act_BPD[i : i + batch_size]
+        batch = batch.to(device)
+        batch_sae = sae.forward(batch)
+        sae_outs.append(batch_sae.sae_out.detach().cpu())
+        fvus.append(batch_sae.fvu.detach().cpu())
+        latent_actss.append(batch_sae.latent_acts.detach().cpu())
+        latent_indicess.append(batch_sae.latent_indices.detach().cpu())
+        print(f"batch_sae {batch_sae.latent_acts.shape}")
+
+    print(f'len sae_outs {len(sae_outs)}')
+
+    sae_outs = torch.cat(sae_outs, dim=0)
+    fvus = torch.cat(fvus, dim=0)
+    latent_actss = torch.cat(latent_actss, dim=0)
+    latent_indicess = torch.cat(latent_indicess, dim=0)
+
+    return sae_outs, fvus, latent_actss, latent_indicess
+
+
+def batch_sae_cache(sae, act_BPD, cfg):
+    if "eleuther" in cfg.sae_name.lower():
+        forward_output = batch_sae_cache_eleuther(sae, act_BPD, cfg.sae_batch_size, DEVICE)
+    elif "saebench" in cfg.sae_name.lower():
+        forward_output = batch_sae_cache_saebench(sae, act_BPD, cfg.sae_batch_size, DEVICE)
+    else:
+        raise ValueError("SAE distribution unknown")
+    
+    return forward_output
 
 
 def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
@@ -275,5 +320,10 @@ def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
         torch.save(inputs_BP, f, pickle_protocol=5)
     with open(os.path.join(INTERIM_DIR, f"masks_{cfg.input_file_str}.pt"), "wb") as f:
         torch.save(all_masks_BP, f, pickle_protocol=5)
+
+    # Memory cleanup
+    del model
+    torch.cuda.empty_cache()
+    gc.collect()
 
     return all_acts_LbPD, all_masks_BP, inputs_BP, selected_story_idxs

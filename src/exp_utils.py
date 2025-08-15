@@ -11,16 +11,134 @@ from src.model_utils import load_tokenizer, load_sae
 from src.cache_utils import compute_llm_artifacts, batch_sae_cache
 
 
-def compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=None) -> Tuple[Tensor, Tensor, List[int]]:
+def _match_word_labels_to_tokens(tokens_BP, word_lists, word_labels, cfg):
+    """
+    Match word-level labels to tokens using character-position based matching.
+    
+    This implementation:
+    1. Joins words with spaces to reconstruct text
+    2. Tokenizes the full text to get token positions
+    3. Maps each token to its character span
+    4. Maps character positions back to original words
+    5. Assigns labels based on word ownership
+    
+    Args:
+        tokens_BP: Token tensor [B, P] 
+        word_lists: List of word lists, one per sequence
+        word_labels: List of label lists, one per word list
+        cfg: Configuration object with tokenizer info
+        
+    Returns:
+        token_labels_BP: Token label tensor [B, P] where each element is a string label
+    """
+    from src.model_utils import load_tokenizer
+    
+    tokenizer = load_tokenizer(cfg.llm_name, MODELS_DIR)
+    B, P = tokens_BP.shape
+    
+    # Initialize with empty strings
+    token_labels_BP = [["" for _ in range(P)] for _ in range(B)]
+    
+    for b in range(B):
+        if b >= len(word_lists) or b >= len(word_labels):
+            continue
+            
+        words = word_lists[b]
+        labels = word_labels[b]
+        
+        if len(words) != len(labels):
+            print(f"Warning: Mismatched word/label counts for sequence {b}: {len(words)} words, {len(labels)} labels")
+            continue
+            
+        # Reconstruct text by joining words with spaces
+        text = " ".join(words)
+        
+        # Create character-to-word mapping
+        char_to_word = {}
+        char_pos = 0
+        for word_idx, word in enumerate(words):
+            # Skip space before first word
+            if word_idx > 0:
+                char_pos += 1  # space character
+            
+            # Map each character in this word to the word index
+            word_start = char_pos
+            word_end = char_pos + len(word)
+            for char_idx in range(word_start, word_end):
+                char_to_word[char_idx] = word_idx
+            char_pos = word_end
+        
+        # Tokenize the full text to get character offsets
+        # Use return_offsets_mapping to get character positions
+        try:
+            encoded = tokenizer(text, return_offsets_mapping=True, add_special_tokens=True)
+            token_ids = encoded['input_ids']
+            offsets = encoded.get('offset_mapping', [])
+            
+            # Match our pre-computed token IDs with the fresh tokenization
+            for p in range(min(P, len(token_ids))):
+                if p < len(offsets) and offsets[p] is not None:
+                    start_char, end_char = offsets[p]
+                    
+                    # Find which word(s) this token spans
+                    if start_char < len(text):
+                        # Use the start character to determine word ownership
+                        if start_char in char_to_word:
+                            word_idx = char_to_word[start_char]
+                            if word_idx < len(labels):
+                                token_labels_BP[b][p] = labels[word_idx]
+                        else:
+                            # Token might start with a space, try next character
+                            if start_char + 1 in char_to_word:
+                                word_idx = char_to_word[start_char + 1]
+                                if word_idx < len(labels):
+                                    token_labels_BP[b][p] = labels[word_idx]
+                                    
+        except Exception as e:
+            print(f"Warning: Could not get offsets for sequence {b}, falling back to simple matching: {e}")
+            # Fallback: simple word-by-word tokenization approach
+            _match_tokens_fallback(token_labels_BP[b], tokens_BP[b], words, labels, tokenizer, P)
+    
+    return token_labels_BP
+
+
+def _match_tokens_fallback(token_labels_P, tokens_P, words, labels, tokenizer, P):
+    """
+    Fallback method for token-label matching when offset mapping is not available.
+    Uses incremental word-by-word tokenization.
+    """
+    token_idx = 0
+    
+    for word_idx, (word, label) in enumerate(zip(words, labels)):
+        # Tokenize this word individually (without special tokens)
+        word_tokens = tokenizer(word, add_special_tokens=False)['input_ids']
+        
+        # Assign this label to the next N tokens
+        for _ in range(len(word_tokens)):
+            if token_idx < P:
+                # Skip special tokens at the beginning
+                while (token_idx < P and 
+                       tokens_P[token_idx].item() in [tokenizer.bos_token_id, tokenizer.cls_token_id]):
+                    token_idx += 1
+                
+                if token_idx < P:
+                    token_labels_P[token_idx] = label
+                    token_idx += 1
+
+
+def compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=None, loaded_word_lists=None, loaded_word_labels=None) -> Tuple[Tensor, Tensor, Tensor, Optional[List[List[str]]], List[int]]:
     """
     Load activations and attention mask tensors for a given model and number of stories.
+    Optionally handles word-level labels that need to be matched to tokens.
 
     Args:
-        model_name: Name of the model (e.g., "openai-community/gpt2")
-        num_stories: Number of stories used to generate activations
+        cfg: Configuration object
+        loaded_dataset_sequences: Pre-loaded dataset sequences (optional)
+        loaded_word_lists: List of word lists, where each word list corresponds to a sequence (optional)
+        loaded_word_labels: List of label lists, where each label list corresponds to a word list (optional)
 
     Returns:
-        tuple: (activations tensor, attention mask tensor)
+        tuple: (activations tensor, attention mask tensor, tokens tensor, token labels list or None, story indices)
     """
 
     artifact_fnames = {
@@ -28,42 +146,68 @@ def compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=None) -> Tuple[T
         "mask": f"masks_{cfg.input_file_str}.pt",
         "tokens": f"tokens_{cfg.input_file_str}.pt",
         "all_idxs": f"story_idxs_{cfg.input_file_str}.pt",
+        "labels": f"token_labels_{cfg.input_file_str}.pt",
     }
     artifact_dirs = {
         k: os.path.join(INTERIM_DIR, v) for k, v in artifact_fnames.items()
     }
-    is_existing_each = [os.path.exists(d) for d in artifact_dirs.values()]
+    # Check if we need labels (only check label artifacts if word labels are provided)
+    has_word_labels = loaded_word_lists is not None and loaded_word_labels is not None
+    core_artifacts = ["act", "mask", "tokens", "all_idxs"]
+    artifacts_to_check = core_artifacts + (["labels"] if has_word_labels else [])
+    
+    is_existing_each = [os.path.exists(artifact_dirs[k]) for k in artifacts_to_check]
     is_existing = all(is_existing_each)
 
     if not is_existing or cfg.force_recompute:
         acts_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
+        
+        # Generate token labels if word labels are provided
+        if has_word_labels:
+            token_labels_BP = _match_word_labels_to_tokens(tokens_BP, loaded_word_lists, loaded_word_labels, cfg)
+            # Save token labels
+            torch.save(token_labels_BP, artifact_dirs["labels"])
+        else:
+            token_labels_BP = None
     else:
         acts_LBPD = torch.load(artifact_dirs["act"], weights_only=False).to("cpu")
         masks_BP = torch.load(artifact_dirs["mask"], weights_only=False)
         tokens_BP = torch.load(artifact_dirs["tokens"], weights_only=False)
         dataset_story_idxs = torch.load(artifact_dirs["all_idxs"], weights_only=False)
+        
+        # Load token labels if they exist
+        if has_word_labels and os.path.exists(artifact_dirs["labels"]):
+            token_labels_BP = torch.load(artifact_dirs["labels"], weights_only=False)
+        else:
+            token_labels_BP = None
 
     if cfg.selected_story_idxs is not None:
         dataset_story_idxs = torch.tensor(dataset_story_idxs)
         dataset_story_idxs = dataset_story_idxs[cfg.selected_story_idxs]
         acts_LBPD = acts_LBPD[:, dataset_story_idxs, :, :]
         masks_BP = masks_BP[dataset_story_idxs, :]
+        if token_labels_BP is not None:
+            token_labels_BP = [token_labels_BP[i] for i in dataset_story_idxs]
 
     if cfg.omit_BOS_token:
         acts_LBPD = acts_LBPD[:, :, 1:, :]
         tokens_BP = tokens_BP[:, 1:]
         masks_BP = masks_BP[:, 1:]
+        if token_labels_BP is not None:
+            token_labels_BP = [seq[1:] for seq in token_labels_BP]
 
     if cfg.num_tokens_per_story is not None:
         acts_LBPD = acts_LBPD[:, :, : cfg.num_tokens_per_story, :]
         tokens_BP = tokens_BP[:, : cfg.num_tokens_per_story]
         masks_BP = masks_BP[:, : cfg.num_tokens_per_story]
+        if token_labels_BP is not None:
+            token_labels_BP = [seq[: cfg.num_tokens_per_story] for seq in token_labels_BP]
 
-    return acts_LBPD, masks_BP, tokens_BP, dataset_story_idxs
+    return acts_LBPD, masks_BP, tokens_BP, token_labels_BP, dataset_story_idxs
 
 
 def load_activation_split(cfg, loaded_dataset_sequences=None):
-    act_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
+    act_LBPD, masks_BP, tokens_BP, token_labels_BP, dataset_story_idxs = compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
 
     # Do train-test split
     if cfg.do_train_test_split:
@@ -74,8 +218,8 @@ def load_activation_split(cfg, loaded_dataset_sequences=None):
         act_train_LBPD = act_LBPD[:, train_idxs, :, :]
         act_test_LBPD = act_LBPD[:, test_idxs, :, :]
 
-        masks_train_BP = masks_BP[:, train_idxs, :]
-        masks_test_BP = masks_BP[:, test_idxs, :]
+        masks_train_BP = masks_BP[train_idxs, :]
+        masks_test_BP = masks_BP[test_idxs, :]
 
         tokens_test_BP = [tokens_BP[i] for i in test_idxs]
         dataset_idxs_test = [dataset_story_idxs[i] for i in test_idxs]
@@ -113,20 +257,19 @@ def compute_or_load_sae(cfg, loaded_dataset_sequences=None) -> Tuple[Tensor, Ten
     sae_path = os.path.join(INTERIM_DIR, f"sae_activations_{cfg.sae_file_str}.pt")
 
     if cfg.force_recompute or not os.path.exists(sae_path):
-        llm_act_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
+        llm_act_LBPD, masks_BP, tokens_BP, token_labels_BP, dataset_story_idxs = compute_or_load_llm_artifacts(cfg, loaded_dataset_sequences=loaded_dataset_sequences)
         llm_act_BPD = llm_act_LBPD[cfg.layer_idx]
 
         # Load SAE
-        sae = load_sae(cfg.sae_name, cfg.layer_idx)
+        sae = load_sae(cfg)
 
         # Compute data
-        sae_out_BPD, fvu_BP, latent_acts_BPS, latent_indices_BPK = batch_sae_cache(
-            sae, llm_act_BPD, cfg.sae_batch_size, DEVICE
-        )
+        sae_out_BPD, fvu_BP, latent_acts_BPS, latent_indices_BPK = batch_sae_cache(sae, llm_act_BPD, cfg)
 
         # Save data
         sae_data = {
             "llm_acts": llm_act_BPD,
+            "masks": masks_BP,
             "sae_out": sae_out_BPD,
             "fvu": fvu_BP,
             "latent_acts": latent_acts_BPS,
@@ -142,13 +285,14 @@ def compute_or_load_sae(cfg, loaded_dataset_sequences=None) -> Tuple[Tensor, Ten
         # Load precomputed artifacts
         sae_data = torch.load(sae_path, weights_only=False)
         llm_act_BPD = sae_data["llm_acts"]
+        masks_BP = sae_data["masks"]
         latent_acts_BPS = sae_data["latent_acts"]
         latent_indices_BPK = sae_data["latent_indices"]
         sae_out_BPD = sae_data["sae_out"]
         fvu_BP = sae_data["fvu"]
         print(f"SAE results loaded from: {sae_path}")
 
-    return llm_act_BPD, latent_acts_BPS, latent_indices_BPK, sae_out_BPD, fvu_BP
+    return llm_act_BPD, masks_BP, latent_acts_BPS, latent_indices_BPK, sae_out_BPD, fvu_BP
 
 
 def save_svd_results(
@@ -379,6 +523,7 @@ def load_tokens_of_story(
     dataset_num_stories: int,
     story_idx: int,
     model_name: str,
+    input_file_str: str,
     omit_BOS_token: bool = False,
     seq_length: Optional[int] = None,
 ) -> List[str]:
@@ -395,13 +540,11 @@ def load_tokens_of_story(
         A list of tokens for the specified story.
     """
     tokenizer = load_tokenizer(model_name, MODELS_DIR)
-    model_str = model_name.replace("/", "--")
-    dataset_str = dataset_name.split("/")[-1].split(".")[0]
-    tokens_fname = f"tokens_{model_str}_{dataset_str}_samples{dataset_num_stories}.pt"
-    inputs_BP = torch.load(os.path.join(INTERIM_DIR, tokens_fname), weights_only=False)
+    inputs_BP = torch.load(os.path.join(INTERIM_DIR, f"tokens_{input_file_str}.pt"), weights_only=False)
     tokens = [
         tokenizer.decode(t, skip_special_tokens=False) for t in inputs_BP[story_idx]
     ]
+    tokens = [t.replace("\n", "<newline>") for t in tokens]
 
     if omit_BOS_token:
         # GPT2 doesn't add a BOS token, but other models like Llama do.

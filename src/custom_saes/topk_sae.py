@@ -70,6 +70,13 @@ class TopKSAE(base_sae.BaseSAE):
         f, latent_acts, latent_indices = self.encode(x, return_val_ind=True)
         out = self.decode(f)
 
+        dec_norm_S = self.W_dec.norm(dim=-1)
+        
+        print("self.W_dec.shape", self.W_dec.shape)
+        print("dec_norm_S.shape", dec_norm_S.shape)
+        print("dec_norm_S.mean", dec_norm_S.mean())
+        latent_acts = latent_acts / dec_norm_S[latent_indices]
+
         fvu = base_sae.compute_fvu(x, out)
 
         return base_sae.ForwardOutput(
