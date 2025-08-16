@@ -1,6 +1,6 @@
 
 #%%
-import torch
+import torch as th
 from transformers import AutoTokenizer, AutoModelForCausalLM, Qwen2Config
 from src.project_config import MODELS_DIR
 
@@ -18,7 +18,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=MODELS_DIR)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     # config=config,
-    torch_dtype=torch.float16,
+    torch_dtype=th.float16,
     device_map="auto",
     attn_implementation="flash_attention_2",
     cache_dir=MODELS_DIR, 

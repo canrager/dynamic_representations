@@ -1,5 +1,5 @@
 import os
-import torch
+import torch as th
 import json
 from nnsight import LanguageModel
 from tqdm import trange
@@ -48,8 +48,8 @@ def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens, hf_text_id
             inputs_BP.append(input_ids_P[0, :num_tokens])
             selected_story_idxs.append(story_idx)
 
-    inputs_BP = torch.stack(inputs_BP)
-    masks_BP = torch.ones_like(inputs_BP)
+    inputs_BP = th.stack(inputs_BP)
+    masks_BP = th.ones_like(inputs_BP)
 
     return inputs_BP, masks_BP, selected_story_idxs
 
@@ -89,8 +89,8 @@ def collect_from_local_with_length_filter(tokenizer, dataset_name, num_sentences
     )
 
     print(f"Tokenized {len(inputs_BP)} sentences")
-    inputs_BP = torch.stack(inputs_BP)
-    masks_BP = torch.ones_like(inputs_BP)
+    inputs_BP = th.stack(inputs_BP)
+    masks_BP = th.ones_like(inputs_BP)
     return inputs_BP, masks_BP, selected_sentence_idxs
 
 def tokenize_with_pad_from_local(tokenizer, dataset_name, num_sentences=None, num_tokens=64):
@@ -133,7 +133,7 @@ def batch_llm_cache(
     device: str,
     debug: bool = False,
 ) -> Tensor:
-    all_acts_LBPD = torch.zeros(
+    all_acts_LBPD = th.zeros(
         (
             len(submodules),
             inputs_BP.shape[0],
@@ -141,7 +141,7 @@ def batch_llm_cache(
             hidden_dim,
         )
     )
-    all_masks_BP = torch.zeros(
+    all_masks_BP = th.zeros(
         (
             inputs_BP.shape[0],
             inputs_BP.shape[1],
@@ -166,11 +166,9 @@ def batch_llm_cache(
                 print(decoded_tokens)
                 print()
 
-            print(f"batch_mask:\n {batch_mask}")
-
         all_masks_BP[batch_start:batch_end] = batch_mask
         with (
-            torch.inference_mode(),
+            th.inference_mode(),
             model.trace(batch_inputs, scan=False, validate=False),
         ):
             for l, sm in enumerate(submodules):
@@ -213,20 +211,18 @@ def batch_sae_cache_eleuther(
         fvu_flattened.append(batch_sae.fvu.detach().cpu())
         latent_acts_flattened.append(batch_sae.latent_acts.detach().cpu())
         latent_indices_flattened.append(batch_sae.latent_indices.detach().cpu())
-        if i == 0:
-            print(f"batch_sae {batch_sae}")
 
-    out_flattened = torch.stack(out_flattened)
-    fvu_flattened = torch.stack(fvu_flattened)
-    latent_acts_flattened = torch.stack(latent_acts_flattened)
-    latent_indices_flattened = torch.stack(latent_indices_flattened)
+    out_flattened = th.stack(out_flattened)
+    fvu_flattened = th.stack(fvu_flattened)
+    latent_acts_flattened = th.stack(latent_acts_flattened)
+    latent_indices_flattened = th.stack(latent_indices_flattened)
 
     out = out_flattened.reshape(B, P, D)
     fvu = fvu_flattened.reshape(B, P)
     latent_acts = latent_acts_flattened.reshape(B, P, K)
     latent_indices = latent_indices_flattened.reshape(B, P, K)
 
-    return out, fvu, latent_acts, latent_indices
+    return out, latent_acts, latent_indices
 
 
 def batch_sae_cache_saebench(
@@ -237,36 +233,28 @@ def batch_sae_cache_saebench(
     """
     B, P, D = act_BPD.shape
 
-    sae_outs = []
-    fvus = []
+    recons = []
     latent_actss = []
-    latent_indicess = []
 
     for i in trange(0, B, batch_size, desc="SAE forward"):
         batch = act_BPD[i : i + batch_size]
         batch = batch.to(device)
-        batch_sae = sae.forward(batch)
-        sae_outs.append(batch_sae.sae_out.detach().cpu())
-        fvus.append(batch_sae.fvu.detach().cpu())
-        latent_actss.append(batch_sae.latent_acts.detach().cpu())
-        latent_indicess.append(batch_sae.latent_indices.detach().cpu())
-        print(f"batch_sae {batch_sae.latent_acts.shape}")
+        recon_BPD, sae_act_BPS = sae.forward(batch, output_features=True)
+        recons.append(recon_BPD.detach().cpu())
+        latent_actss.append(sae_act_BPS.detach().cpu())
 
-    print(f'len sae_outs {len(sae_outs)}')
+    recons = th.cat(recons, dim=0)
+    latent_actss = th.cat(latent_actss, dim=0)
+    latent_indicess = None # TODO
 
-    sae_outs = torch.cat(sae_outs, dim=0)
-    fvus = torch.cat(fvus, dim=0)
-    latent_actss = torch.cat(latent_actss, dim=0)
-    latent_indicess = torch.cat(latent_indicess, dim=0)
-
-    return sae_outs, fvus, latent_actss, latent_indicess
+    return recons, latent_actss, latent_indicess
 
 
-def batch_sae_cache(sae, act_BPD, cfg):
-    if "eleuther" in cfg.sae_name.lower():
-        forward_output = batch_sae_cache_eleuther(sae, act_BPD, cfg.sae_batch_size, DEVICE)
-    elif "saebench" in cfg.sae_name.lower():
-        forward_output = batch_sae_cache_saebench(sae, act_BPD, cfg.sae_batch_size, DEVICE)
+def batch_sae_cache(sae, act_BPD, sae_cfg):
+    if "eleuther" in sae_cfg.name.lower():
+        forward_output = batch_sae_cache_eleuther(sae, act_BPD, sae_cfg.batch_size, DEVICE)
+    elif any([name in sae_cfg.name.lower() for name in ["saebench", "neurons"]]):
+        forward_output = batch_sae_cache_saebench(sae, act_BPD, sae_cfg.batch_size, DEVICE)
     else:
         raise ValueError("SAE distribution unknown")
     
@@ -275,7 +263,7 @@ def batch_sae_cache(sae, act_BPD, cfg):
 
 def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
     # Load model
-    model, submodules, hidden_dim = load_nnsight_model(cfg)
+    model, submodules, hidden_dim = load_nnsight_model(cfg.llm)
 
     # Load dataset
     if loaded_dataset_sequences is not None:
@@ -283,20 +271,20 @@ def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
             tokenizer=model.tokenizer,
             sequences=loaded_dataset_sequences
         )
-    elif cfg.dataset_name.endswith(".json"):
+    elif cfg.dataset.name.endswith(".json"):
         inputs_BP, masks_BP, selected_story_idxs = collect_from_local(
             tokenizer=model.tokenizer,
-            dataset_name=cfg.dataset_name,
+            dataset_name=cfg.dataset.name,
             num_sentences=cfg.num_total_stories,
             num_tokens=cfg.num_tokens_per_story
         )
     else:
         inputs_BP, masks_BP, selected_story_idxs = collect_from_hf(
             tokenizer=model.tokenizer, 
-            dataset_name=cfg.dataset_name, 
+            dataset_name=cfg.dataset.name, 
             num_stories=cfg.num_total_stories, 
             num_tokens=cfg.num_tokens_per_story,
-            hf_text_identifier=cfg.hf_text_identifier
+            hf_text_identifier=cfg.dataset.hf_text_identifier
         )
 
     # Call batch_act_cache
@@ -306,24 +294,24 @@ def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
         inputs_BP=inputs_BP,
         masks_BP=masks_BP,
         hidden_dim=hidden_dim,
-        batch_size=cfg.llm_batch_size,
+        batch_size=cfg.llm.batch_size,
         device=DEVICE,
         debug=cfg.debug,
     )
 
     # Save artifacts
-    with open(os.path.join(INTERIM_DIR, f"activations_{cfg.input_file_str}.pt"), "wb") as f:
-        torch.save(all_acts_LbPD, f, pickle_protocol=5)
-    with open(os.path.join(INTERIM_DIR, f"story_idxs_{cfg.input_file_str}.pt"), "wb") as f:
-        torch.save(selected_story_idxs, f, pickle_protocol=5)
-    with open(os.path.join(INTERIM_DIR, f"tokens_{cfg.input_file_str}.pt"), "wb") as f:
-        torch.save(inputs_BP, f, pickle_protocol=5)
-    with open(os.path.join(INTERIM_DIR, f"masks_{cfg.input_file_str}.pt"), "wb") as f:
-        torch.save(all_masks_BP, f, pickle_protocol=5)
+    with open(os.path.join(INTERIM_DIR, f"activations_{hash(cfg)}.pt"), "wb") as f:
+        th.save(all_acts_LbPD, f, pickle_protocol=5)
+    with open(os.path.join(INTERIM_DIR, f"story_idxs_{hash(cfg)}.pt"), "wb") as f:
+        th.save(selected_story_idxs, f, pickle_protocol=5)
+    with open(os.path.join(INTERIM_DIR, f"tokens_{hash(cfg)}.pt"), "wb") as f:
+        th.save(inputs_BP, f, pickle_protocol=5)
+    with open(os.path.join(INTERIM_DIR, f"masks_{hash(cfg)}.pt"), "wb") as f:
+        th.save(all_masks_BP, f, pickle_protocol=5)
 
     # Memory cleanup
     del model
-    torch.cuda.empty_cache()
+    th.cuda.empty_cache()
     gc.collect()
 
     return all_acts_LbPD, all_masks_BP, inputs_BP, selected_story_idxs

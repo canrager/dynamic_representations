@@ -1,7 +1,7 @@
 import os
 from typing import Any
 
-import torch
+import torch as th
 from tqdm import tqdm
 
 import sae_bench.evals.absorption.main as absorption
@@ -266,7 +266,7 @@ if __name__ == "__main__":
             d_model,
             model_name,
             hook_layer,
-            device=torch.device(device),
+            device=th.device(device),
             dtype=general_utils.str_to_dtype(llm_dtype),
         )  # type: ignore
         selected_saes = [(f"{model_name}_layer_{hook_layer}_identity_sae", sae)]
@@ -276,7 +276,7 @@ if __name__ == "__main__":
         #     d_model,
         #     model_name,
         #     hook_layer,
-        #     device=torch.device(device),
+        #     device=th.device(device),
         #     dtype=general_utils.str_to_dtype(llm_dtype),
         # )
         # filename = f"pca_gemma-2-2b_blocks.{hook_layer}.hook_resid_post.pt"

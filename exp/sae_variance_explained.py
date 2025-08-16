@@ -4,7 +4,7 @@ Plot number of active sae features over tokens
 
 import torch as th
 from typing import Optional, List
-from src.exp_utils import compute_or_load_sae
+from src.exp_utils import compute_or_load_sae_artifacts
 from src.project_config import DEVICE
 import matplotlib.pyplot as plt
 import os
@@ -31,13 +31,14 @@ class Config:
 
         self.sae_architecture = "relu"
         self.sae_repo_id = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
-        self.sae_filename = "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_4/ae.pt"
+        self.sae_filename = (
+            "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_4/ae.pt"
+        )
         self.sae_name: str = "saebench_gemma-2-2b_relu_width-2pow14_layer_12_trainer_4"
         self.d_sae: int = 16384
 
         # self.sae_name: str = "EleutherAI/sae-llama-3-8b-32x"
         # self.d_sae: int = 80
-
 
         self.sae_batch_size: int = 100
 
@@ -93,9 +94,7 @@ def plot_fvu(fvu_BP, cfg):
 
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(fvu_mean_P, label="fvu")
-    ax.fill_between(
-        range(len(fvu_mean_P)), fvu_mean_P - fvu_ci_P, fvu_mean_P + fvu_ci_P, alpha=0.2
-    )
+    ax.fill_between(range(len(fvu_mean_P)), fvu_mean_P - fvu_ci_P, fvu_mean_P + fvu_ci_P, alpha=0.2)
 
     ax.set_xlabel("Token position")
     ax.set_ylabel("FVU")
@@ -130,9 +129,7 @@ def plot_reconstruction_exp_var(llm_act_BPD, sae_out_BPD, cfg):
 
     ax.set_xlabel("Token position")
     ax.set_ylabel("Explained variance")
-    ax.set_title(
-        f"Explained variance over tokens\nsae {cfg.sae_str}, dataset {cfg.dataset_str}"
-    )
+    ax.set_title(f"Explained variance over tokens\nsae {cfg.sae_str}, dataset {cfg.dataset_str}")
     ax.legend(loc="upper right")
     ax.grid(True, alpha=0.3)
 
@@ -151,7 +148,7 @@ def plot_activation_distribution(latent_act_BPS, cfg):
     latent_act_mean_S = latent_act_BPS.mean(dim=(0, 1))
     latent_act_std_S = latent_act_BPS.std(dim=(0, 1))
     B, P, S = latent_act_BPS.shape
-    latent_act_ci_S = 1.96 * latent_act_std_S / (B ** 0.5) # only stories are independent
+    latent_act_ci_S = 1.96 * latent_act_std_S / (B**0.5)  # only stories are independent
 
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(latent_act_mean_S, color="blue")
@@ -178,9 +175,7 @@ def plot_activation_distribution(latent_act_BPS, cfg):
     ax.legend(loc="upper right")
     ax.grid(True, alpha=0.3)
 
-    save_dir = os.path.join(
-        PLOTS_DIR, f"activation_distribution_{cfg.output_file_str}.png"
-    )
+    save_dir = os.path.join(PLOTS_DIR, f"activation_distribution_{cfg.output_file_str}.png")
     plt.savefig(save_dir, dpi=80)
     print(f"\nSaved SAE latent var distribution over tokens plot to {save_dir}")
     plt.close()
@@ -188,10 +183,12 @@ def plot_activation_distribution(latent_act_BPS, cfg):
 
 def plot_num_active_latents(latent_acts_BPS, cfg):
 
-    max_activation_S = latent_acts_BPS.flatten(0,1).max(0).values
+    max_activation_S = latent_acts_BPS.flatten(0, 1).max(0).values
 
     # Find active latents
-    latent_active_threshs_ST = max_activation_S[:, None] * th.tensor(cfg.latent_active_threshs)[None, :] 
+    latent_active_threshs_ST = (
+        max_activation_S[:, None] * th.tensor(cfg.latent_active_threshs)[None, :]
+    )
     is_active_BPST = latent_acts_BPS[:, :, :, None] > latent_active_threshs_ST[None, None, :, :]
     num_active_BPT = is_active_BPST.sum(dim=-2)
 
@@ -210,13 +207,15 @@ def plot_num_active_latents(latent_acts_BPS, cfg):
             range(len(num_active_mean_P)),
             num_active_mean_P - num_active_ci_P,
             num_active_mean_P + num_active_ci_P,
-            alpha=0.2
+            alpha=0.2,
         )
 
     ax.set_xlabel("Token position")
     ax.set_ylabel("Number of active latents")
-    ax.set_title(f"Number of active latents over tokens\nsae {cfg.sae_name}, dataset {cfg.dataset_name}")
-    ax.legend(loc='upper right')
+    ax.set_title(
+        f"Number of active latents over tokens\nsae {cfg.sae_name}, dataset {cfg.dataset_name}"
+    )
+    ax.legend(loc="upper right")
     ax.grid(True, alpha=0.3)
 
     save_dir = os.path.join(PLOTS_DIR, f"num_active_latents_{cfg.output_file_str}.png")
@@ -228,7 +227,7 @@ def plot_num_active_latents(latent_acts_BPS, cfg):
 def compute_latent_over_latent_exp_var(latent_act_BPS, cfg):
 
     latent_var_BPS = latent_act_BPS**2
-    print(f'latent_var_BPS {latent_var_BPS.shape}')
+    print(f"latent_var_BPS {latent_var_BPS.shape}")
     latent_var_total_BP = latent_var_BPS.sum(-1)
 
     if cfg.sort_variance:
@@ -246,7 +245,6 @@ def compute_recon_over_orig_exp_var(sae, llm_act_BPD, latent_act_BPS, cfg):
     llm_var_total_BP = llm_act_BPD.sum(-1)
 
     raise NotImplementedError
-
 
 
 def find_min_latents_required(exp_var_cumulative_BPS, cfg):
@@ -293,9 +291,7 @@ def plot_min_components_exp_var(min_latents_required_mean_PT, min_latents_requir
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.3)
 
-    save_dir = os.path.join(
-        PLOTS_DIR, f"latent_over_latent_exp_var_{cfg.output_file_str}.png"
-    )
+    save_dir = os.path.join(PLOTS_DIR, f"latent_over_latent_exp_var_{cfg.output_file_str}.png")
     plt.savefig(save_dir, dpi=80)
     print(
         f"\nSaved Latent SAE latent over latent explained variance over tokens plot to {save_dir}"
@@ -307,9 +303,8 @@ if __name__ == "__main__":
     cfg = Config()
 
     llm_act_BPD, masks_BP, latent_acts_BPS, latent_indices_BPK, sae_out_BPD, fvu_BP = (
-        compute_or_load_sae(cfg)
+        compute_or_load_sae_artifacts(cfg)
     )
-
 
     plot_num_active_latents(latent_acts_BPS, cfg)
 

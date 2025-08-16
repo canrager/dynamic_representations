@@ -1,6 +1,6 @@
 import json
 
-import torch
+import torch as th
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
 
@@ -8,8 +8,8 @@ import src.custom_saes.base_sae as base_sae
 
 
 class TopKSAE(base_sae.BaseSAE):
-    threshold: torch.Tensor
-    k: torch.Tensor
+    threshold: th.Tensor
+    k: th.Tensor
 
     def __init__(
         self,
@@ -18,8 +18,8 @@ class TopKSAE(base_sae.BaseSAE):
         k: int,
         model_name: str,
         hook_layer: int,
-        device: torch.device,
-        dtype: torch.dtype,
+        device: th.device,
+        dtype: th.dtype,
         use_threshold: bool = False,
         hook_name: str | None = None,
     ):
@@ -27,16 +27,16 @@ class TopKSAE(base_sae.BaseSAE):
         super().__init__(d_in, d_sae, model_name, hook_layer, device, dtype, hook_name)
 
         assert isinstance(k, int) and k > 0
-        self.register_buffer("k", torch.tensor(k, dtype=torch.int, device=device))
+        self.register_buffer("k", th.tensor(k, dtype=th.int, device=device))
 
         self.use_threshold = use_threshold
         if use_threshold:
             # Optional global threshold to use during inference. Must be positive.
             self.register_buffer(
-                "threshold", torch.tensor(-1.0, dtype=dtype, device=device)
+                "threshold", th.tensor(-1.0, dtype=dtype, device=device)
             )
 
-    def encode(self, x: torch.Tensor, return_val_ind: bool = False):
+    def encode(self, x: th.Tensor, return_val_ind: bool = False):
         """Note: x can be either shape (B, F) or (B, L, F)"""
         post_relu_feat_acts_BF = nn.functional.relu(
             (x - self.b_dec) @ self.W_enc + self.b_enc
@@ -57,16 +57,16 @@ class TopKSAE(base_sae.BaseSAE):
         top_acts_BK = post_topk.values
         top_indices_BK = post_topk.indices
 
-        buffer_BF = torch.zeros_like(post_relu_feat_acts_BF)
+        buffer_BF = th.zeros_like(post_relu_feat_acts_BF)
         encoded_acts_BF = buffer_BF.scatter_(
             dim=-1, index=top_indices_BK, src=top_acts_BK
         )
         return encoded_acts_BF, top_acts_BK, top_indices_BK
 
-    def decode(self, feature_acts: torch.Tensor):
+    def decode(self, feature_acts: th.Tensor):
         return (feature_acts @ self.W_dec) + self.b_dec
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: th.Tensor):
         f, latent_acts, latent_indices = self.encode(x, return_val_ind=True)
         out = self.decode(f)
 
@@ -91,8 +91,8 @@ def load_dictionary_learning_topk_sae(
     repo_id: str,
     filename: str,
     model_name: str,
-    device: torch.device,
-    dtype: torch.dtype,
+    device: th.device,
+    dtype: th.dtype,
     layer: int | None = None,
     local_dir: str = "downloaded_saes",
     use_threshold_at_inference: bool = False,
@@ -106,7 +106,7 @@ def load_dictionary_learning_topk_sae(
         local_dir=local_dir,
     )
 
-    pt_params = torch.load(path_to_params, map_location=torch.device("cpu"))
+    pt_params = th.load(path_to_params, map_location=th.device("cpu"))
 
     config_filename = filename.replace("ae.pt", "config.json")
     path_to_config = hf_hub_download(
@@ -194,8 +194,8 @@ if __name__ == "__main__":
     filename = "gemma-2-2b_top_k_width-2pow14_date-0107/resid_post_layer_12/trainer_2/ae.pt"
     layer = 12
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32
+    device = "cuda" if th.cuda.is_available() else "cpu"
+    dtype = th.float32
 
     model_name = "google/gemma-2-2b"
     hook_name = f"blocks.{layer}.hook_resid_post"

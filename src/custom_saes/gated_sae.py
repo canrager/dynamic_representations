@@ -1,7 +1,7 @@
 import json
 
-import torch
-import torch.nn as nn
+import torch as th
+import th.nn as nn
 from huggingface_hub import hf_hub_download
 
 import sae_bench.custom_saes.base_sae as base_sae
@@ -14,20 +14,20 @@ class GatedSAE(base_sae.BaseSAE):
         d_sae: int,
         model_name: str,
         hook_layer: int,
-        device: torch.device,
-        dtype: torch.dtype,
+        device: th.device,
+        dtype: th.dtype,
         hook_name: str | None = None,
     ):
         hook_name = hook_name or f"blocks.{hook_layer}.hook_resid_post"
         super().__init__(d_in, d_sae, model_name, hook_layer, device, dtype, hook_name)
 
-        self.r_mag = nn.Parameter(torch.zeros(d_sae, dtype=dtype, device=device))
-        self.b_mag = nn.Parameter(torch.zeros(d_sae, dtype=dtype, device=device))
-        self.gate_bias = nn.Parameter(torch.zeros(d_sae, dtype=dtype, device=device))
+        self.r_mag = nn.Parameter(th.zeros(d_sae, dtype=dtype, device=device))
+        self.b_mag = nn.Parameter(th.zeros(d_sae, dtype=dtype, device=device))
+        self.gate_bias = nn.Parameter(th.zeros(d_sae, dtype=dtype, device=device))
 
         del self.b_enc
 
-    def encode(self, x: torch.Tensor):
+    def encode(self, x: th.Tensor):
         x_enc = (x - self.b_dec) @ self.W_enc
 
         # Gated network
@@ -36,16 +36,16 @@ class GatedSAE(base_sae.BaseSAE):
 
         # Magnitude network
         pi_mag = self.r_mag.exp() * x_enc + self.b_mag
-        f_mag = torch.nn.functional.relu(pi_mag)
+        f_mag = th.nn.functional.relu(pi_mag)
 
         f = f_gate * f_mag
 
         return f
 
-    def decode(self, feature_acts: torch.Tensor):
+    def decode(self, feature_acts: th.Tensor):
         return feature_acts @ self.W_dec + self.b_dec
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: th.Tensor):
         x = self.encode(x)
         recon = self.decode(x)
         return recon
@@ -55,8 +55,8 @@ def load_dictionary_learning_gated_sae(
     repo_id: str,
     filename: str,
     model_name: str,
-    device: torch.device,
-    dtype: torch.dtype,
+    device: th.device,
+    dtype: th.dtype,
     layer: int | None = None,
     local_dir: str = "downloaded_saes",
 ) -> GatedSAE:
@@ -69,7 +69,7 @@ def load_dictionary_learning_gated_sae(
         local_dir=local_dir,
     )
 
-    pt_params = torch.load(path_to_params, map_location=torch.device("cpu"))
+    pt_params = th.load(path_to_params, map_location=th.device("cpu"))
 
     config_filename = filename.replace("ae.pt", "config.json")
     path_to_config = hf_hub_download(
@@ -149,8 +149,8 @@ if __name__ == "__main__":
     filename = "GatedSAETrainer_EleutherAI_pythia-160m-deduped_ctx1024_0104/resid_post_layer_8/trainer_14/ae.pt"
     layer = 8
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32
+    device = "cuda" if th.cuda.is_available() else "cpu"
+    dtype = th.float32
 
     model_name = "EleutherAI/pythia-160m-deduped"
     hook_name = f"blocks.{layer}.hook_resid_post"

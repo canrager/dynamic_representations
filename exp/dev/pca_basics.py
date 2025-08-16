@@ -1,5 +1,5 @@
 import os
-import torch
+import torch as th
 from typing import Optional, List
 import matplotlib.pyplot as plt
 from src.project_config import ARTIFACTS_DIR
@@ -57,14 +57,14 @@ if __name__ == "__main__":
 
     # Simplified computation of fraction of variance reconstructed
     # Project centered data onto PCA components
-    story_pca_PC = torch.einsum("pd,cd->pc", story_centered_PD, Vt_LCD[layer_idx, :, :])
+    story_pca_PC = th.einsum("pd,cd->pc", story_centered_PD, Vt_LCD[layer_idx, :, :])
 
     # Compute cumulative squared projections (variance explained)
     squared_projections_PC = story_pca_PC**2
-    cumulative_variance_PC = torch.cumsum(squared_projections_PC, dim=1)
+    cumulative_variance_PC = th.cumsum(squared_projections_PC, dim=1)
 
     # Total variance for each position (squared norm of centered data)
-    total_variance_P = torch.sum(story_centered_PD**2, dim=1)
+    total_variance_P = th.sum(story_centered_PD**2, dim=1)
 
     # Fraction of variance reconstructed
     frac_variance_reconstructed_PC = cumulative_variance_PC / total_variance_P[:, None]
@@ -106,12 +106,12 @@ if __name__ == "__main__":
 
     Vt_CD = Vt_LCD[layer_idx, :, :]
 
-    total_var_P = torch.var(tokens_centered_BPD, dim=0).sum(dim=-1)
+    total_var_P = th.var(tokens_centered_BPD, dim=0).sum(dim=-1)
 
     # Compute PCA coefficients on centered data
-    pca_BPC = torch.einsum("bpd,cd->bpc", tokens_centered_BPD, Vt_CD)
-    pca_var_PC = torch.var(pca_BPC, dim=0)
-    pca_cumsum_var_PC = torch.cumsum(pca_var_PC, dim=-1)
+    pca_BPC = th.einsum("bpd,cd->bpc", tokens_centered_BPD, Vt_CD)
+    pca_var_PC = th.var(pca_BPC, dim=0)
+    pca_cumsum_var_PC = th.cumsum(pca_var_PC, dim=-1)
 
     pca_var_exp_PC = pca_cumsum_var_PC / total_var_P[:, None]
 
@@ -147,11 +147,11 @@ if __name__ == "__main__":
     story_centered_BPD = (
         story_BPD - means_LD[layer_idx][None, None, :]
     )  # Center the data by subtracting the mean that was used during PCA computation
-    total_variance_BP = torch.sum(story_centered_BPD**2, dim=-1)
+    total_variance_BP = th.sum(story_centered_BPD**2, dim=-1)
 
-    pca_BPC = torch.einsum("bpd,cd->bpc", story_centered_BPD, Vt_LCD[layer_idx, :, :])
+    pca_BPC = th.einsum("bpd,cd->bpc", story_centered_BPD, Vt_LCD[layer_idx, :, :])
     variance_pca_BPC = pca_BPC**2
-    cumulative_variance_BPC = torch.cumsum(variance_pca_BPC, dim=-1)
+    cumulative_variance_BPC = th.cumsum(variance_pca_BPC, dim=-1)
 
     explained_variance_cumulative_BPC = (
         cumulative_variance_BPC / total_variance_BP[:, :, None]
@@ -159,10 +159,10 @@ if __name__ == "__main__":
 
     ## Find first component that meets threshold
     meets_threshold_BPC = explained_variance_cumulative_BPC >= reconstruction_threshold
-    min_components_required_BP = torch.argmax(meets_threshold_BPC.int(), dim=-1)
+    min_components_required_BP = th.argmax(meets_threshold_BPC.int(), dim=-1)
 
     # If no solution is found, set to max number of components
-    has_solution_BP = torch.any(meets_threshold_BPC, dim=-1)
+    has_solution_BP = th.any(meets_threshold_BPC, dim=-1)
     min_components_required_BP.masked_fill_(~has_solution_BP, num_components)
 
     fig, ax = plt.subplots(

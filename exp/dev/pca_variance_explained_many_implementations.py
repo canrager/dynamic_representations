@@ -1,5 +1,5 @@
 import os
-import torch
+import torch as th
 from typing import Optional, List, Literal, Union
 import matplotlib.pyplot as plt
 import einops
@@ -20,7 +20,7 @@ def compute_intrinsic_dimension_skdim(
     mode: Literal["fisher", "pca"] = "pca",
 ):
     L, B, P, D = act_train_LBPD.shape
-    id_results_P = torch.zeros(P)
+    id_results_P = th.zeros(P)
     act_train_before_p_BPD = act_train_LBPD[layer_idx, :, :, :]
 
     for p in trange(0, P, desc="Computing intrinsic dimension with skdim"):
@@ -50,7 +50,7 @@ def compute_intrinsic_dimension_windowed_skdim(
     assert window_size > 0, "Window size must be positive"
 
     L, B, P, D = act_train_LBPD.shape
-    id_results_P = torch.zeros(P)
+    id_results_P = th.zeros(P)
     act_train_before_p_BPD = act_train_LBPD[layer_idx, :, :, :]
 
     for p in trange(window_size, P, desc="Computing intrinsic dimension with skdim"):
@@ -88,7 +88,7 @@ def compute_variance_explained_pca_over_all_tokens(
     story_centered_BPD = (
         story_BPD - mean_test_D
     )  # Center the data wrt. test stories only
-    total_variance_BP = torch.sum(story_centered_BPD**2, dim=-1)
+    total_variance_BP = th.sum(story_centered_BPD**2, dim=-1)
 
     print(f"total_variance_BP.shape: {total_variance_BP.shape}")
     print(f"total_variance_BP max: {total_variance_BP.max()}")
@@ -121,8 +121,8 @@ def compute_variance_explained_pca_over_all_tokens(
         "b p d, c d -> b p c",
     )
     pca_variance_BPC = pca_coeffs_BPC**2
-    pca_variance_sorted_BPC, _ = torch.sort(pca_variance_BPC, dim=-1, descending=True)
-    pca_cumulative_variance_BPC = torch.cumsum(pca_variance_sorted_BPC, dim=-1)
+    pca_variance_sorted_BPC, _ = th.sort(pca_variance_BPC, dim=-1, descending=True)
+    pca_cumulative_variance_BPC = th.cumsum(pca_variance_sorted_BPC, dim=-1)
 
     # Compute explained variance
     explained_variance_cumulative_BPC = (
@@ -141,12 +141,12 @@ def compute_variance_explained_pca_over_all_tokens(
     # Find first k components that meet reconstruction_thresholds for explained variance
     meets_threshold_BPCT = (
         explained_variance_cumulative_BPC[:, :, :, None]
-        >= torch.tensor(reconstruction_thresholds)[None, None, None, :]
+        >= th.tensor(reconstruction_thresholds)[None, None, None, :]
     )
-    min_components_required_BPT = torch.argmax(meets_threshold_BPCT.int(), dim=-2)
+    min_components_required_BPT = th.argmax(meets_threshold_BPCT.int(), dim=-2)
 
     # If no solution is found, set to max number of components
-    has_solution_BPT = torch.any(meets_threshold_BPCT, dim=-2)
+    has_solution_BPT = th.any(meets_threshold_BPCT, dim=-2)
     min_components_required_BPT.masked_fill_(~has_solution_BPT, num_components)
 
     print(f"min_components_required_BPT.shape: {min_components_required_BPT.shape}")
@@ -172,8 +172,8 @@ def compute_variance_explained_pca_before_token_p(
     L, B_test, P, D = act_test_LBPD.shape
     C = D  # PCA basis spans the full model space
     T = len(reconstruction_thresholds)
-    min_components_required_mean_PT = torch.zeros(P, T)
-    min_components_required_std_PT = torch.zeros(P, T)
+    min_components_required_mean_PT = th.zeros(P, T)
+    min_components_required_std_PT = th.zeros(P, T)
 
     if window_size is not None:
         start_token_idx = window_size
@@ -213,7 +213,7 @@ def compute_variance_explained_pca_before_token_p(
         # act_test_at_p_centered_BD = act_test_at_p_BD - act_test_at_p_BD.mean(dim=0) # center wrt. test set
 
         act_test_at_p_centered_BD = act_test_at_p_centered_BD.to(DEVICE)
-        total_variance_B = torch.sum(act_test_at_p_centered_BD**2, dim=-1)
+        total_variance_B = th.sum(act_test_at_p_centered_BD**2, dim=-1)
 
         ##### Compute variance explained by top-k PCA components
 
@@ -226,8 +226,8 @@ def compute_variance_explained_pca_before_token_p(
         pca_variance_BC = pca_coeffs_BC**2
 
         if do_sort_pca_components_per_token:
-            pca_variance_BC, _ = torch.sort(pca_variance_BC, dim=-1, descending=True)
-        pca_cumulative_variance_BC = torch.cumsum(pca_variance_BC, dim=-1)
+            pca_variance_BC, _ = th.sort(pca_variance_BC, dim=-1, descending=True)
+        pca_cumulative_variance_BC = th.cumsum(pca_variance_BC, dim=-1)
 
         # Compute explained variance
         explained_variance_cumulative_BC = (
@@ -237,14 +237,14 @@ def compute_variance_explained_pca_before_token_p(
         # Find first k components that meet reconstruction_thresholds for explained variance
         meets_threshold_BCT = (
             explained_variance_cumulative_BC[:, :, None]
-            >= torch.tensor(reconstruction_thresholds)[None, None, :]
+            >= th.tensor(reconstruction_thresholds)[None, None, :]
         )
         min_components_required_BT = (
-            torch.argmax(meets_threshold_BCT.int(), dim=-2) + 1
+            th.argmax(meets_threshold_BCT.int(), dim=-2) + 1
         )  # 1-indexed
 
         # If no solution is found, set to max number of components
-        has_solution_BT = torch.any(meets_threshold_BCT, dim=-2)
+        has_solution_BT = th.any(meets_threshold_BCT, dim=-2)
         min_components_required_BT.masked_fill_(~has_solution_BT, C)
 
         min_components_required_mean_PT[p, :] = min_components_required_BT.float().mean(
@@ -305,7 +305,7 @@ def compute_intrinsic_dimension(
                     mode="pca",
                 )
                 results.append(res)
-            return torch.stack(results)
+            return th.stack(results)
         else:
             return compute_intrinsic_dimension_windowed_skdim(
                 act_train_LBPD,
@@ -324,7 +324,7 @@ def compute_intrinsic_dimension(
                     mode="fisher",
                 )
                 results.append(res)
-            return torch.stack(results)
+            return th.stack(results)
         else:
             return compute_intrinsic_dimension_windowed_skdim(
                 act_train_LBPD,
@@ -444,7 +444,7 @@ def plot_mean_components_across_stories(
         std_components = min_components_required_std_PT[:, t_idx].cpu()
 
         # 95% confidence interval: 1.96 * std / sqrt(n)
-        positions_P = torch.arange(max_pos)
+        positions_P = th.arange(max_pos)
         ci_components_P = (
             1.96 * std_components / ((num_test_stories * (positions_P + 1)) ** 0.5)
         )  # NOTE the number of all samples increases with each token position
@@ -633,7 +633,7 @@ if __name__ == "__main__":
 
     # Do train-test split
     if do_train_test_split:
-        rand_idxs = torch.randperm(num_total_stories)
+        rand_idxs = th.randperm(num_total_stories)
         train_idxs = rand_idxs[:num_total_stories_train]
         test_idxs = rand_idxs[num_total_stories_train:]
 
@@ -701,17 +701,17 @@ if __name__ == "__main__":
     # NOTE The above approach to use the variance of the PCA coefficients is numerically unstable, since PCA vectors are not exactly orthogonal.
     # However, this has no significant impact on min components required
 
-    # reconstruction_BPD = torch.zeros_like(story_BPD).to(DEVICE)
-    # pca_cumulative_variance_BPC = torch.zeros_like(pca_coeffs_BPC).to(DEVICE)
+    # reconstruction_BPD = th.zeros_like(story_BPD).to(DEVICE)
+    # pca_cumulative_variance_BPC = th.zeros_like(pca_coeffs_BPC).to(DEVICE)
 
     # for c in range(num_components):
     #     reconstruction_BPD += einops.einsum(
     #         pca_coeffs_BPC[:, :, c], Vt_CD[c], "b p, d -> b p d"
     #     )
-    #     pca_cumulative_variance_BPC[:, :, c] = torch.sum(reconstruction_BPD**2, dim=-1)
+    #     pca_cumulative_variance_BPC[:, :, c] = th.sum(reconstruction_BPD**2, dim=-1)
 
     # print(f"difference {(pca_cumulative_variance_BPC - pca_cumulative_variance1_BPC).max()}")
-    # assert torch.allclose(
+    # assert th.allclose(
     #     pca_cumulative_variance_BPC, pca_cumulative_variance1_BPC, atol=1e-3
     # )
 
@@ -722,7 +722,7 @@ if __name__ == "__main__":
     #     Vt_CD,
     #     "b p c, c d -> b p c d"
     # )
-    # pca_cumulative_reconstruction_BPCD = torch.cumsum(
+    # pca_cumulative_reconstruction_BPCD = th.cumsum(
     #     pca_decomposition_BPCD, dim=-2
     # )
-    # pca_cumulative_variance_BPC = torch.sum(pca_cumulative_reconstruction_BPCD**2, dim=-1)
+    # pca_cumulative_variance_BPC = th.sum(pca_cumulative_reconstruction_BPCD**2, dim=-1)

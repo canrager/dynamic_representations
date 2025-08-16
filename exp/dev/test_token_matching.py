@@ -3,7 +3,7 @@
 Test script to verify token-label matching functionality.
 """
 import json
-import torch
+import torch as th
 from types import SimpleNamespace
 
 # Create a minimal config object for testing

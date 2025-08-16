@@ -1,4 +1,4 @@
-import torch
+import torch as th
 from src.model_utils import load_hf_model
 from src.project_config import DEVICE, MODELS_DIR
 
@@ -23,7 +23,7 @@ inputs = tokenizer(
     "Hello, world! On a warm sunny day, Teli wanted to", return_tensors="pt"
 ).to(DEVICE)
 
-with torch.inference_mode():
+with th.inference_mode():
     outputs = model.generate(**inputs, max_new_tokens=100)
 
 print(tokenizer.decode(outputs[0], skip_special_tokens=True))

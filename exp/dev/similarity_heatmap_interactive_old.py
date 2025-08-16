@@ -1,5 +1,5 @@
 import os
-import torch
+import torch as th
 from typing import Optional, List
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
@@ -192,7 +192,7 @@ if __name__ == "__main__":
         raise ValueError(f"Model {model_name} not supported")
 
     # Thresholds for explained variance
-    explained_variance_thresholds = torch.tensor([0.5, 0.75, 0.9])  # e.g. 0.1 to 1.0
+    explained_variance_thresholds = th.tensor([0.5, 0.75, 0.9])  # e.g. 0.1 to 1.0
     num_thresholds = len(explained_variance_thresholds)
 
     # Load activations and SVD results on full dataset of stories
@@ -239,7 +239,7 @@ if __name__ == "__main__":
         act_selected_LBPD = act_selected_LBPD[:, :, :max_tokens_per_story, :]
         mask_BP = mask_BP[:, :max_tokens_per_story]
 
-    batch_mask, pos_mask = torch.where(mask_BP)
+    batch_mask, pos_mask = th.where(mask_BP)
     act_selected_LbD = act_selected_LBPD[:, batch_mask, pos_mask, :]
 
     Vt_LCD = Vt_LCD[plot_layer_indices_actual, :, :]
@@ -251,28 +251,28 @@ if __name__ == "__main__":
     C_total_components = projected_LbC.shape[2]  # Max components in projected_LbC
 
     # Compute the explained variance of the projected activations
-    total_variance_L = torch.sum(act_selected_LbD**2, dim=(-2, -1))
-    projected_variance_LC = torch.sum(projected_LbC**2, dim=-2)
-    cumulate_variance_LC = torch.cumsum(projected_variance_LC, dim=-1)
+    total_variance_L = th.sum(act_selected_LbD**2, dim=(-2, -1))
+    projected_variance_LC = th.sum(projected_LbC**2, dim=-2)
+    cumulate_variance_LC = th.cumsum(projected_variance_LC, dim=-1)
     explained_variance_LC = cumulate_variance_LC / total_variance_L[:, None]
 
     print(f"cumulate_variance_LC: {cumulate_variance_LC[:, -1]}")
     print(f"total_variance_L: {total_variance_L}")
-    assert torch.allclose(
+    assert th.allclose(
         cumulate_variance_LC[:, -1], total_variance_L, rtol=0.01, atol=0.01
     )
 
     first_component_exceeding_LCT = (
         explained_variance_LC[:, :, None] > explained_variance_thresholds[None, None, :]
     )
-    lowest_component_LT = torch.argmax(first_component_exceeding_LCT.int(), dim=-2)
+    lowest_component_LT = th.argmax(first_component_exceeding_LCT.int(), dim=-2)
 
     # Handle the case where no component exceeds the threshold
-    any_component_exceeding_LT = torch.any(first_component_exceeding_LCT, dim=-2)
+    any_component_exceeding_LT = th.any(first_component_exceeding_LCT, dim=-2)
     lowest_component_LT.masked_fill_(~any_component_exceeding_LT, num_components)
 
     # Compute similarity matrix with projected activations, for the components that exceed the thresholds
-    similarity_matrices_LTPP = torch.zeros(
+    similarity_matrices_LTPP = th.zeros(
         (num_layers, num_thresholds, num_total_tokens, num_total_tokens),
         device=projected_LbC.device,  # Added device
         dtype=projected_LbC.dtype,  # Added dtype
@@ -299,7 +299,7 @@ if __name__ == "__main__":
             # truncated_bc shape: (num_total_tokens, num_slice_end_idx)
             truncated_bc = projected_LbC[l_idx, :, :num_slice_end_idx]
 
-            norm_truncated_bc = torch.linalg.norm(truncated_bc, dim=-1, keepdim=True)
+            norm_truncated_bc = th.linalg.norm(truncated_bc, dim=-1, keepdim=True)
             # Add small epsilon to prevent division by zero for zero-norm vectors
             truncated_normed_bc = truncated_bc / (norm_truncated_bc + 1e-8)
 

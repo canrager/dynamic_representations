@@ -3,7 +3,7 @@ import math
 import time
 
 import einops
-import torch
+import torch as th
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
 from sklearn.decomposition import IncrementalPCA
@@ -21,33 +21,33 @@ class PCASAE(base_sae.BaseSAE):
         d_in: int,
         model_name: str,
         hook_layer: int,
-        device: torch.device,
-        dtype: torch.dtype,
+        device: th.device,
+        dtype: th.dtype,
         hook_name: str | None = None,
     ):
         hook_name = hook_name or f"blocks.{hook_layer}.hook_resid_post"
         super().__init__(d_in, d_in, model_name, hook_layer, device, dtype, hook_name)
 
         # Additional parameter specific to PCA
-        self.mean = nn.Parameter(torch.zeros(d_in, device=device, dtype=dtype))
+        self.mean = nn.Parameter(th.zeros(d_in, device=device, dtype=dtype))
 
-    def encode(self, x: torch.Tensor):
+    def encode(self, x: th.Tensor):
         centered_acts = x - self.mean
         encoded_acts = centered_acts @ self.W_enc
         return encoded_acts
 
-    def decode(self, feature_acts: torch.Tensor):
+    def decode(self, feature_acts: th.Tensor):
         decoded_acts = feature_acts @ self.W_dec
         return decoded_acts + self.mean
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: th.Tensor):
         x = self.encode(x)
         recon = self.decode(x)
         return recon
 
     def save_state_dict(self, file_path: str):
         """Save the encoder and decoder to a file."""
-        torch.save(
+        th.save(
             {
                 "W_enc": self.W_enc.data,  # type: ignore
                 "W_dec": self.W_dec.data,
@@ -67,45 +67,45 @@ class PCASAE(base_sae.BaseSAE):
             local_dir="downloaded_saes",
         )
 
-        state_dict = torch.load(path_to_params, map_location=self.device)
+        state_dict = th.load(path_to_params, map_location=self.device)
         self.W_enc.data = state_dict["W_enc"]  # type: ignore
         self.W_dec.data = state_dict["W_dec"]
         self.mean.data = state_dict["mean"]
         self.normalize_decoder()
         self.to(dtype=self.dtype, device=self.device)
 
-    @torch.no_grad()
+    @th.no_grad()
     def normalize_decoder(self):
-        norms = torch.norm(self.W_dec, dim=1).to(dtype=self.dtype, device=self.device)
+        norms = th.norm(self.W_dec, dim=1).to(dtype=self.dtype, device=self.device)
 
         print("Decoder vectors are not normalized. Normalizing.")
 
-        test_input = torch.randn(
+        test_input = th.randn(
             10, self.cfg.d_in, device=self.device, dtype=self.dtype
         )
         initial_output = self(test_input)
 
         self.W_dec.data /= norms[:, None]
 
-        new_norms = torch.norm(self.W_dec, dim=1)
-        assert torch.allclose(new_norms, torch.ones_like(new_norms))
+        new_norms = th.norm(self.W_dec, dim=1)
+        assert th.allclose(new_norms, th.ones_like(new_norms))
 
         self.W_enc *= norms
 
         new_output = self(test_input)
 
-        max_diff = torch.abs(initial_output - new_output).max()
+        max_diff = th.abs(initial_output - new_output).max()
         print(f"Max difference in output: {max_diff}")
 
         # Errors can be relatively large in larger SAEs due to floating point precision
-        assert torch.allclose(initial_output, new_output, atol=1e-4)
+        assert th.allclose(initial_output, new_output, atol=1e-4)
 
 
-@torch.no_grad()
+@th.no_grad()
 def fit_PCA(
     pca: PCASAE,
     model: HookedTransformer,
-    tokens_BL: torch.Tensor,
+    tokens_BL: th.Tensor,
     llm_batch_size: int,
     pca_batch_size: int,
 ) -> PCASAE:
@@ -148,20 +148,20 @@ def fit_PCA(
     print(f"Incremental PCA fit took {time.time() - start_time:.2f} seconds")
 
     # Set the learned components
-    pca.mean.data = torch.tensor(ipca.mean_, dtype=torch.float32, device="cpu")
-    pca.W_enc.data = torch.tensor(ipca.components_, dtype=torch.float32, device="cpu")  # type: ignore
-    pca.W_dec.data = torch.tensor(ipca.components_.T, dtype=torch.float32, device="cpu")  # type: ignore
+    pca.mean.data = th.tensor(ipca.mean_, dtype=th.float32, device="cpu")
+    pca.W_enc.data = th.tensor(ipca.components_, dtype=th.float32, device="cpu")  # type: ignore
+    pca.W_dec.data = th.tensor(ipca.components_.T, dtype=th.float32, device="cpu")  # type: ignore
 
     pca.save_state_dict(f"pca_{pca.cfg.model_name}_{pca.cfg.hook_name}.pt")
 
     return pca
 
 
-@torch.no_grad()
+@th.no_grad()
 def fit_PCA_gpu(
     pca: PCASAE,
     model: HookedTransformer,
-    tokens_BL: torch.Tensor,
+    tokens_BL: th.Tensor,
     llm_batch_size: int,
     pca_batch_size: int,
 ) -> PCASAE:
@@ -199,7 +199,7 @@ def fit_PCA_gpu(
 
         # Reshape on GPU
         activations_BD = einops.rearrange(activations_BLD, "B L D -> (B L) D").to(
-            dtype=torch.float32
+            dtype=th.float32
         )
 
         if activations_BD.shape[0] <= pca.cfg.d_in:
@@ -216,19 +216,19 @@ def fit_PCA_gpu(
 
         # Optional: Clear cache periodically
         gc.collect()
-        torch.cuda.empty_cache()
+        th.cuda.empty_cache()
         cp.get_default_memory_pool().free_all_blocks()
 
     print(f"GPU Incremental PCA fit took {time.time() - start_time:.2f} seconds")
 
     # Get components back as torch tensors
-    components = torch.from_numpy(cp.asnumpy(ipca.components_))
-    pca_mean = torch.from_numpy(cp.asnumpy(ipca.mean_))
+    components = th.from_numpy(cp.asnumpy(ipca.components_))
+    pca_mean = th.from_numpy(cp.asnumpy(ipca.mean_))
 
     # Set the learned components
-    pca.mean.data = pca_mean.to(dtype=torch.float32, device="cpu")
-    pca.W_enc.data = components.float().to(dtype=torch.float32, device="cpu")  # type: ignore
-    pca.W_dec.data = components.T.float().to(dtype=torch.float32, device="cpu")
+    pca.mean.data = pca_mean.to(dtype=th.float32, device="cpu")
+    pca.W_enc.data = components.float().to(dtype=th.float32, device="cpu")  # type: ignore
+    pca.W_dec.data = components.T.float().to(dtype=th.float32, device="cpu")
 
     pca.save_state_dict(f"pca_{pca.cfg.model_name}_{pca.cfg.hook_name}.pt")
 
@@ -236,15 +236,15 @@ def fit_PCA_gpu(
 
 
 if __name__ == "__main__":
-    device = torch.device(
+    device = th.device(
         "mps"
-        if torch.backends.mps.is_available()
+        if th.backends.mps.is_available()
         else "cuda"
-        if torch.cuda.is_available()
+        if th.cuda.is_available()
         else "cpu"
     )
 
-    torch.set_grad_enabled(False)
+    th.set_grad_enabled(False)
 
     model_name = "pythia-70m-deduped"
     d_model = 512
@@ -255,12 +255,12 @@ if __name__ == "__main__":
     if model_name == "pythia-70m-deduped":
         llm_batch_size = 1024
         pca_batch_size = 400_000
-        llm_dtype = torch.float32
+        llm_dtype = th.float32
         layers = [3, 4]
     elif model_name == "gemma-2-2b":
         llm_batch_size = 128
         pca_batch_size = 100_000
-        llm_dtype = torch.bfloat16
+        llm_dtype = th.bfloat16
         layers = [5, 12, 19]
     else:
         raise ValueError("Invalid model")
@@ -290,7 +290,7 @@ if __name__ == "__main__":
 
         pca.to(device=device)
 
-        test_input = torch.randn(1, 128, d_model, device=device, dtype=torch.float32)
+        test_input = th.randn(1, 128, d_model, device=device, dtype=th.float32)
 
         encoded = pca.encode(test_input)
 
@@ -298,6 +298,6 @@ if __name__ == "__main__":
 
         print(f"L0: {(encoded != 0).sum() / 128}")
 
-        print(f"Diff: {torch.abs(test_input - test_output).mean()}")
+        print(f"Diff: {th.abs(test_input - test_output).mean()}")
 
-        assert torch.allclose(test_input, test_output, atol=1e-5)
+        assert th.allclose(test_input, test_output, atol=1e-5)

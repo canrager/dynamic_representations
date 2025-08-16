@@ -4,7 +4,7 @@ from typing import Optional, List, Literal, Union
 import matplotlib.pyplot as plt
 import einops
 from src.project_config import PLOTS_DIR, DEVICE
-from src.exp_utils import compute_or_load_sae
+from src.exp_utils import compute_or_load_sae_artifacts
 from tqdm import trange
 
 from src.exp_utils import load_tokens_of_story
@@ -33,7 +33,9 @@ class Config:
 
         self.sae_architecture = "relu"
         self.sae_repo_id = "canrager/saebench_gemma-2-2b_width-2pow14_date-0107"
-        self.sae_filename = "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_4/ae.pt"
+        self.sae_filename = (
+            "gemma-2-2b_standard_new_width-2pow14_date-0107/resid_post_layer_12/trainer_4/ae.pt"
+        )
         self.sae_name: str = "saebench_gemma-2-2b_relu_width-2pow14_layer_12_trainer_4"
         self.d_sae: int = 16384
 
@@ -67,9 +69,7 @@ class Config:
             else "all"
         )
 
-        self.input_file_str = (
-            f"{llm_str}" + f"_{dataset_str}" + f"_{self.num_total_stories}"
-        )
+        self.input_file_str = f"{llm_str}" + f"_{dataset_str}" + f"_{self.num_total_stories}"
 
         self.sae_file_str = self.input_file_str + f"_{sae_str}"
 
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     cfg = Config()
 
     llm_act_BPD, masks_BP, latent_acts_BPS, latent_indices_BPK, sae_out_BPD, fvu_BP = (
-        compute_or_load_sae(cfg)
+        compute_or_load_sae_artifacts(cfg)
     )
 
     # llm_act_PD = th.cat([llm_act_BPD[0, 0:20, :], llm_act_BPD[1, 0:20, :]], dim=1)
@@ -154,9 +154,7 @@ if __name__ == "__main__":
     fig.colorbar(im2, ax=ax, label="Cosine Similarity", location="right")
     fig.suptitle(cfg.sae_file_str)
 
-    fig_path = os.path.join(
-        PLOTS_DIR, f"cossim_heatmap_llm_vs_latents_{cfg.output_file_str}.png"
-    )
+    fig_path = os.path.join(PLOTS_DIR, f"cossim_heatmap_llm_vs_latents_{cfg.output_file_str}.png")
 
     plt.savefig(fig_path)
     print(f"Saved {fig_path}")

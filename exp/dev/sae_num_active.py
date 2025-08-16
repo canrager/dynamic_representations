@@ -1,16 +1,17 @@
-'''
+"""
 Plot number of active sae features over tokens
-'''
+"""
 
 import torch as th
 from typing import Optional, List
-from src.exp_utils import compute_or_load_sae
+from src.exp_utils import compute_or_load_sae_artifacts
 from src.project_config import DEVICE
 import matplotlib.pyplot as plt
 import os
 from src.project_config import PLOTS_DIR
 
-class Config():
+
+class Config:
     def __init__(self):
         self.llm_name: str = "meta-llama/Llama-3.1-8B"
         self.layer_idx: int = 12
@@ -33,7 +34,6 @@ class Config():
 
         self.latent_active_threshs: bool = [0.1, 0.2, 0.3, 0.4, 0.5, 1]
 
-
         ### String summarizing the parameters for loading and saving artifacts
         llm_str = self.llm_name.split("/")[-1]
         sae_str = self.sae_name.split("/")[-1]
@@ -44,11 +44,7 @@ class Config():
             else "all"
         )
 
-        self.input_file_str = (
-            f"{llm_str}"
-            + f"_{dataset_str}"
-            + f"_{self.num_total_stories}"
-        )
+        self.input_file_str = f"{llm_str}" + f"_{dataset_str}" + f"_{self.num_total_stories}"
 
         self.sae_file_str = self.input_file_str + f"_{sae_str}"
 
@@ -60,41 +56,33 @@ class Config():
         )
 
 
-    
-
-
-
 def plot_fvu(fvu_BP, cfg):
     fvu_mean_P = fvu_BP.float().mean(dim=0)
     fvu_std_P = fvu_BP.float().std(dim=0)
     B = fvu_BP.shape[0]
     fvu_ci_P = 1.96 * fvu_std_P / (B**0.5)
-    
+
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(fvu_mean_P, label="fvu")
-    ax.fill_between(
-        range(len(fvu_mean_P)),
-        fvu_mean_P - fvu_ci_P,
-        fvu_mean_P + fvu_ci_P,
-        alpha=0.2
-    )
+    ax.fill_between(range(len(fvu_mean_P)), fvu_mean_P - fvu_ci_P, fvu_mean_P + fvu_ci_P, alpha=0.2)
 
     ax.set_xlabel("Token position")
     ax.set_ylabel("FVU")
     ax.set_title(f"FVU over tokens\nsae {cfg.sae_name}, dataset {cfg.dataset_name}")
-    ax.legend(loc='upper right')
+    ax.legend(loc="upper right")
     ax.grid(True, alpha=0.3)
-    
+
     save_dir = os.path.join(PLOTS_DIR, f"fvu_{cfg.output_file_str}.png")
     plt.savefig(save_dir, dpi=80)
     print(f"\nSaved FVU plot to {save_dir}")
     plt.close()
 
+
 if __name__ == "__main__":
 
     cfg = Config()
 
-    fvu_BP, latent_acts_BPS, latent_indices_BPK = compute_or_load_sae(cfg)
+    fvu_BP, latent_acts_BPS, latent_indices_BPK = compute_or_load_sae_artifacts(cfg)
 
     plot_num_active_latents(latent_acts_BPS, cfg)
 

@@ -1,11 +1,11 @@
 import os
-import torch
+import torch as th
 from typing import Optional, List
 import matplotlib.pyplot as plt
 from src.project_config import ARTIFACTS_DIR
 from src.exp_utils import compute_or_load_svd, load_tokens_of_story
 
-def plot_single_evolution(evolution_P: torch.Tensor, plot_label: str, plot_title: str, save_fname: str) -> None:
+def plot_single_evolution(evolution_P: th.Tensor, plot_label: str, plot_title: str, save_fname: str) -> None:
     fig, ax = plt.subplots(figsize=(6,4))
     ax.plot(evolution_P, label=plot_label)
     ax.legend()
@@ -14,7 +14,7 @@ def plot_single_evolution(evolution_P: torch.Tensor, plot_label: str, plot_title
     print(f"Figure saved to: {os.path.join(ARTIFACTS_DIR, save_fname)}")
     plt.close(fig)
 
-def plot_evolutions_across_layers_pca_components(evolutions_LCP: torch.Tensor, plot_title: str, save_fname: str, sequence_tokens: Optional[List[str]] = None) -> None:
+def plot_evolutions_across_layers_pca_components(evolutions_LCP: th.Tensor, plot_title: str, save_fname: str, sequence_tokens: Optional[List[str]] = None) -> None:
     num_layers, num_pca_components, seq_length = evolutions_LCP.shape
     if sequence_tokens is not None:
         assert len(sequence_tokens) == seq_length
@@ -66,7 +66,7 @@ def plot_evolutions_across_layers_pca_components(evolutions_LCP: torch.Tensor, p
     plt.close(fig)
 
 
-def plot_evolutions_across_stories_layers_pca_components(evolutions_LBCP: torch.Tensor, plot_title: str, save_fname: str, sequence_tokens: Optional[List[str]] = None) -> None:
+def plot_evolutions_across_stories_layers_pca_components(evolutions_LBCP: th.Tensor, plot_title: str, save_fname: str, sequence_tokens: Optional[List[str]] = None) -> None:
     # TODO remove sequence tokens
     num_layers, num_stories, num_pca_components, seq_length = evolutions_LBCP.shape
     if sequence_tokens is not None:
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     story_LPD = act_LBPD[:, story_idx, mask_BP[story_idx].bool(), :]
     story_centered_LPD = story_LPD - means_LD[:, None, None, :]
     pca_LcD = Vt_LCD[:, :top_pca_components, :]  # Use all layers and top_pca_components
-    story_pca_LcP = torch.einsum("LPD,LcD->LcP", story_centered_LPD, pca_LcD)
+    story_pca_LcP = th.einsum("LPD,LcD->LcP", story_centered_LPD, pca_LcD)
 
     plot_title=f"story-{story_idx}_top-pca-components-{top_pca_components}_omit-bos-{do_omit_BOS_token}_trunc-story-{do_truncate_seq_length}"
     plot_save_fname = f"evolution-single-story_{model_str}_{plot_title}.png"
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     story_LBPD = act_LBPD[:, :top_story_idxs, :trunc_seq_length, :]
     story_centered_LBPD = story_LBPD - means_LD[:, None, None, :]
     pca_LcD = Vt_LCD[:, :top_pca_components, :]  # Use all layers and top_pca_components
-    story_pca_LBcP = torch.einsum("LBPD,LcD->LBcP", story_centered_LBPD, pca_LcD)
+    story_pca_LBcP = th.einsum("LBPD,LcD->LBcP", story_centered_LBPD, pca_LcD)
 
     plot_title=f"stories-first-{top_story_idxs}_top-pca-components-{top_pca_components}_omit-bos-{do_omit_BOS_token}_trunc-story-{do_truncate_seq_length}"
     plot_save_fname = f"plot_{model_str}_{plot_title}.png"

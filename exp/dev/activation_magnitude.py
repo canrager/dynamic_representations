@@ -1,5 +1,5 @@
 import os
-import torch
+import torch as th
 from typing import Optional, List, Literal, Union
 import matplotlib.pyplot as plt
 import einops

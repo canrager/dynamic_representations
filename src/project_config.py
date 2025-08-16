@@ -1,4 +1,6 @@
 from pathlib import Path
+import hashlib
+import json
 
 DEVICE = "cuda"
 MODELS_DIR = Path("/home/can/models")

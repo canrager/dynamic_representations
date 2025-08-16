@@ -2,7 +2,7 @@ import os
 import sys
 from typing import Optional
 from nnsight import LanguageModel
-import torch
+import torch as th
 from transformers import (
     AutoTokenizer,
     GPT2Tokenizer,
@@ -27,25 +27,25 @@ def load_tokenizer(llm_name: str, cache_dir: str):
     return tokenizer
 
 
-def load_nnsight_model(cfg):
+def load_nnsight_model(llm_cfg):
     model = LanguageModel(
-        cfg.llm_name,
-        revision=cfg.llm_revision,
+        llm_cfg.name,
+        revision=llm_cfg.revision,
         cache_dir=MODELS_DIR,
         device_map=DEVICE,  # Use the defined device
         dispatch=True,
     )
 
-    if "gpt2" in cfg.llm_name:
+    if "gpt2" in llm_cfg.name:
         print(model)
         print(model.config)
         hidden_dim = model.config.n_embd
         submodules = [model.transformer.h[l] for l in range(model.config.n_layer)]
 
         # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
-        model.tokenizer = load_tokenizer(cfg.llm_name, cache_dir=MODELS_DIR)
+        model.tokenizer = load_tokenizer(llm_cfg.name, cache_dir=MODELS_DIR)
 
-    elif any([s in cfg.llm_name.lower() for s in ["llama", "gemma", "allenai", "qwen", "mistral"]]):
+    elif any([s in llm_cfg.name.lower() for s in ["llama", "gemma", "allenai", "qwen", "mistral"]]):
         print(model)
         print(model.config)
         hidden_dim = model.config.hidden_size
@@ -88,7 +88,7 @@ def load_hf_model(
         return tokenizer
 
     # Determine quantization
-    torch_dtype = torch.bfloat16
+    torch_dtype = th.bfloat16
 
     if quantization_bits == 8:
         quantization_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -114,35 +114,45 @@ def load_hf_model(
 
     # Optimize for inference
     model.eval()
-    model = torch.compile(model)
+    model = th.compile(model)
 
     return model, tokenizer
 
 
+# def load_sae(sae_cfg):
+#     if "eleuther" in sae_cfg.sae_name.lower():
+#         sae_hookpoint_str = f"layers.{sae_cfg.layer_idx}"
+#         sae = Sae.load_from_hub(sae_cfg.sae_name, sae_hookpoint_str, cache_dir=MODELS_DIR)
+#         sae = sae.to(DEVICE)
+#     elif "saebench" in sae_cfg.sae_name.lower():
+#         # if sae_cfg.sae_architecture == "topk":
+#         #     sae = load_dictionary_learning_topk_sae(
+#         #         repo_id=sae_cfg.sae_repo_id,
+#         #         filename=sae_cfg.sae_filename,
+#         #         model_name=sae_cfg.llm_name,
+#         #         device=DEVICE,
+#         #         layer=sae_cfg.layer_idx,
+#         #         dtype=sae_cfg.dtype
+#         #     )
+#         # elif sae_cfg.sae_architecture == "relu":
+#         #     sae = load_dictionary_learning_relu_sae(
+#         #         repo_id=sae_cfg.sae_repo_id,
+#         #         filename=sae_cfg.sae_filename,
+#         #         model_name=sae_cfg.llm_name,
+#         #         device=DEVICE,
+#         #         layer=sae_cfg.layer_idx,
+#         #         dtype=sae_cfg.dtype
+#         #     )
+#     elif "neurons" in sae_cfg.sae_name.lower
+#     else:
+#         raise NotImplementedError
+#     return sae
+
 def load_sae(cfg):
-    if "eleuther" in cfg.sae_name.lower():
-        sae_hookpoint_str = f"layers.{cfg.layer_idx}"
-        sae = Sae.load_from_hub(cfg.sae_name, sae_hookpoint_str, cache_dir=MODELS_DIR)
-        sae = sae.to(DEVICE)
-    elif "saebench" in cfg.sae_name.lower():
-        if cfg.sae_architecture == "topk":
-            sae = load_dictionary_learning_topk_sae(
-                repo_id=cfg.sae_repo_id,
-                filename=cfg.sae_filename,
-                model_name=cfg.llm_name,
-                device=DEVICE,
-                layer=cfg.layer_idx,
-                dtype=cfg.dtype
-            )
-        elif cfg.sae_architecture == "relu":
-            sae = load_dictionary_learning_relu_sae(
-                repo_id=cfg.sae_repo_id,
-                filename=cfg.sae_filename,
-                model_name=cfg.llm_name,
-                device=DEVICE,
-                layer=cfg.layer_idx,
-                dtype=cfg.dtype
-            )
-    else:
-        raise NotImplementedError
+    sae = cfg.sae.dict_class.from_pretrained(
+        path = cfg.sae.local_filename,
+        device = cfg.device,
+        dtype = cfg.dtype,
+    )
+    sae.activation_dim = cfg.sae.dict_size
     return sae

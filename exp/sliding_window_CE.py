@@ -24,8 +24,8 @@ The results should show whether there's a "sweet spot" for sliding window size w
 """
 
 import os
-import torch
-import torch.nn.functional as F
+import torch as th
+import th.nn.functional as F
 import matplotlib.pyplot as plt
 from transformers import AutoTokenizer, AutoModelForCausalLM, Qwen2Config
 from src.project_config import MODELS_DIR, PLOTS_DIR
@@ -49,7 +49,7 @@ def compute_cross_entropy_loss(model, tokenizer, inputs_BP, masks_BP):
     total_loss = 0.0
     total_tokens = 0
     
-    with torch.no_grad():
+    with th.no_grad():
         # Move inputs to device
         inputs_BP = inputs_BP.to(model.device)
         masks_BP = masks_BP.to(model.device)
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     num_sentences = 100
     num_tokens_per_sentence = 100
     model_name = "Qwen/Qwen2.5-7B"
-    sliding_windows = torch.arange(0, num_tokens_per_sentence, 2).tolist() + [None]
+    sliding_windows = th.arange(0, num_tokens_per_sentence, 2).tolist() + [None]
 
     print("Loading dataset...")
     # Load a small tokenizer first to get the dataset
@@ -166,7 +166,7 @@ if __name__ == "__main__":
             # Full attention
             model = AutoModelForCausalLM.from_pretrained(
                 model_name,
-                torch_dtype=torch.float16,
+                torch_dtype=th.float16,
                 device_map="auto",
                 attn_implementation="flash_attention_2",
                 cache_dir=MODELS_DIR,
@@ -184,7 +184,7 @@ if __name__ == "__main__":
             model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 config=config,
-                torch_dtype=torch.float16,
+                torch_dtype=th.float16,
                 device_map="auto",
                 attn_implementation="flash_attention_2",
                 cache_dir=MODELS_DIR,
@@ -207,7 +207,7 @@ if __name__ == "__main__":
         
         # Clean up memory
         del model, tokenizer
-        torch.cuda.empty_cache()
+        th.cuda.empty_cache()
     
     # Create and save line plot
     print("\nCreating visualization...")

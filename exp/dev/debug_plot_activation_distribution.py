@@ -5,13 +5,13 @@ Uses the exact same dataset loading and preprocessing pipeline as the original
 """
 
 import os
-import torch
+import torch as th
 import json
 from nnsight import LanguageModel
 from tqdm import trange
 from typing import List, Tuple, Optional
 from torch import Tensor
-from torch.nn import Module
+from th.nn import Module
 from transformers import BatchEncoding, AutoTokenizer, GPT2Tokenizer
 from datasets import load_dataset
 import matplotlib.pyplot as plt
@@ -149,8 +149,8 @@ def collect_from_hf(
             inputs_BP.append(input_ids_P[0, :num_tokens])
             selected_story_idxs.append(story_idx)
 
-    inputs_BP = torch.stack(inputs_BP)
-    masks_BP = torch.ones_like(inputs_BP)  # All ones since we filtered by length
+    inputs_BP = th.stack(inputs_BP)
+    masks_BP = th.ones_like(inputs_BP)  # All ones since we filtered by length
     return inputs_BP, masks_BP, selected_story_idxs
 
 def batch_llm_cache(
@@ -163,7 +163,7 @@ def batch_llm_cache(
     device: str,
     debug: bool = False,
 ) -> Tensor:
-    all_acts_LBPD = torch.zeros(
+    all_acts_LBPD = th.zeros(
         (
             len(submodules),
             inputs_BP.shape[0],
@@ -171,7 +171,7 @@ def batch_llm_cache(
             hidden_dim,
         )
     )
-    all_masks_BP = torch.zeros(
+    all_masks_BP = th.zeros(
         (
             inputs_BP.shape[0],
             inputs_BP.shape[1],
@@ -204,7 +204,7 @@ def batch_llm_cache(
 
         all_masks_BP[batch_start:batch_end] = batch_mask
         with (
-            torch.inference_mode(),
+            th.inference_mode(),
             model.trace(batch_inputs, scan=False, validate=False),
         ):
             for l, sm in enumerate(submodules):
@@ -240,10 +240,10 @@ def batch_sae_cache(
         latent_indices_flattened.append(batch_sae.latent_indices.detach().cpu())
         print(f"batch_sae {batch_sae.latent_acts.shape}")
 
-    out_flattened = torch.cat(out_flattened, dim=0)
-    fvu_flattened = torch.cat(fvu_flattened, dim=0)
-    latent_acts_flattened = torch.cat(latent_acts_flattened, dim=0)
-    latent_indices_flattened = torch.cat(latent_indices_flattened, dim=0)
+    out_flattened = th.cat(out_flattened, dim=0)
+    fvu_flattened = th.cat(fvu_flattened, dim=0)
+    latent_acts_flattened = th.cat(latent_acts_flattened, dim=0)
+    latent_indices_flattened = th.cat(latent_indices_flattened, dim=0)
 
     out = out_flattened.reshape(B, P, D)
     fvu = fvu_flattened.reshape(B, P)
@@ -278,7 +278,7 @@ def compute_llm_artifacts(cfg):
     )
 
     if cfg.selected_story_idxs is not None:
-        dataset_story_idxs = torch.tensor(dataset_story_idxs)
+        dataset_story_idxs = th.tensor(dataset_story_idxs)
         dataset_story_idxs = dataset_story_idxs[cfg.selected_story_idxs]
         all_acts_LbPD = all_acts_LbPD[:, dataset_story_idxs, :, :]
         all_masks_BP = all_masks_BP[dataset_story_idxs, :]
@@ -336,7 +336,7 @@ def plot_activation_distribution(latent_act_BPS, cfg):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
     # Left subplot: Sorted variance (cfg.sort_variance=True)
-    latent_act_sorted_BPS, _ = torch.sort(latent_act_BPS, dim=-1, descending=True)
+    latent_act_sorted_BPS, _ = th.sort(latent_act_BPS, dim=-1, descending=True)
     latent_act_mean_sorted_S = latent_act_sorted_BPS.mean(dim=(0, 1))
     latent_act_std_sorted_S = latent_act_sorted_BPS.std(dim=(0, 1))
     latent_sorted_max_act_var = latent_act_sorted_BPS.max(-1).values.var()

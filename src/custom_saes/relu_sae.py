@@ -1,6 +1,6 @@
 import json
 
-import torch
+import torch as th
 from huggingface_hub import hf_hub_download
 
 import src.custom_saes.base_sae as base_sae
@@ -13,23 +13,23 @@ class ReluSAE(base_sae.BaseSAE):
         d_sae: int,
         model_name: str,
         hook_layer: int,
-        device: torch.device,
-        dtype: torch.dtype,
+        device: th.device,
+        dtype: th.dtype,
         hook_name: str | None = None,
     ):
         hook_name = hook_name or f"blocks.{hook_layer}.hook_resid_post"
         super().__init__(d_in, d_sae, model_name, hook_layer, device, dtype, hook_name)
         self.d_sae = d_sae
 
-    def encode(self, x: torch.Tensor):
+    def encode(self, x: th.Tensor):
         pre_acts = (x - self.b_dec) @ self.W_enc + self.b_enc
-        acts = torch.relu(pre_acts)
+        acts = th.relu(pre_acts)
         return acts
 
-    def decode(self, feature_acts: torch.Tensor):
+    def decode(self, feature_acts: th.Tensor):
         return (feature_acts @ self.W_dec) + self.b_dec
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: th.Tensor):
         f = self.encode(x)
         recon = self.decode(f)
 
@@ -37,10 +37,10 @@ class ReluSAE(base_sae.BaseSAE):
             sae_out=recon,
             fvu=base_sae.compute_fvu(x, recon),
             latent_acts=f,
-            latent_indices=torch.ones_like(f) * torch.arange(self.cfg.d_sae).to(f.device)
+            latent_indices=th.ones_like(f) * th.arange(self.cfg.d_sae).to(f.device)
         )
 
-    @torch.no_grad()
+    @th.no_grad()
     def normalize_decoder(self):
         """
         This is useful for doing analysis where e.g. feature activation magnitudes are important.
@@ -49,26 +49,26 @@ class ReluSAE(base_sae.BaseSAE):
         """
 
         original_dtype = self.W_dec.dtype
-        self.to(dtype=torch.float32)
+        self.to(dtype=th.float32)
 
         # Errors can be relatively large in larger SAEs due to floating point precision
         tolerance = 1e-2
 
-        norms = torch.norm(self.W_dec, dim=1).to(dtype=self.dtype, device=self.device)
+        norms = th.norm(self.W_dec, dim=1).to(dtype=self.dtype, device=self.device)
 
         print("Decoder vectors are not normalized. Normalizing.")
 
-        test_input = torch.randn(10, self.cfg.d_in).to(
+        test_input = th.randn(10, self.cfg.d_in).to(
             dtype=self.dtype, device=self.device
         )
         initial_output = self(test_input)
 
         self.W_dec.data /= norms[:, None]
 
-        new_norms = torch.norm(self.W_dec, dim=1)
+        new_norms = th.norm(self.W_dec, dim=1)
 
-        if not torch.allclose(new_norms, torch.ones_like(new_norms), atol=tolerance):
-            max_norm_diff = torch.max(torch.abs(new_norms - torch.ones_like(new_norms)))
+        if not th.allclose(new_norms, th.ones_like(new_norms), atol=tolerance):
+            max_norm_diff = th.max(th.abs(new_norms - th.ones_like(new_norms)))
             print(f"Max difference in norms: {max_norm_diff.item()}")
             raise ValueError("Decoder weights are not normalized after normalization")
 
@@ -77,10 +77,10 @@ class ReluSAE(base_sae.BaseSAE):
 
         new_output = self(test_input)
 
-        max_diff = torch.abs(initial_output.sae_out - new_output.sae_out).max()
+        max_diff = th.abs(initial_output.sae_out - new_output.sae_out).max()
         print(f"Max difference in output: {max_diff}")
 
-        assert torch.allclose(initial_output.sae_out, new_output.sae_out, atol=tolerance)
+        assert th.allclose(initial_output.sae_out, new_output.sae_out, atol=tolerance)
 
         self.to(dtype=original_dtype)
 
@@ -89,8 +89,8 @@ def load_dictionary_learning_relu_sae(
     repo_id: str,
     filename: str,
     model_name: str,
-    device: torch.device,
-    dtype: torch.dtype,
+    device: th.device,
+    dtype: th.dtype,
     layer: int | None = None,
     local_dir: str = "downloaded_saes",
 ) -> ReluSAE:
@@ -103,7 +103,7 @@ def load_dictionary_learning_relu_sae(
         local_dir=local_dir,
     )
 
-    pt_params = torch.load(path_to_params, map_location=torch.device("cpu"))
+    pt_params = th.load(path_to_params, map_location=th.device("cpu"))
 
     config_filename = filename.replace("ae.pt", "config.json")
     path_to_config = hf_hub_download(
@@ -182,8 +182,8 @@ if __name__ == "__main__":
     repo_id = "adamkarvonen/saebench_pythia-160m-deduped_width-2pow14_date-0104"
     filename = "StandardTrainerAprilUpdate_EleutherAI_pythia-160m-deduped_ctx1024_0104/resid_post_layer_8/trainer_11/ae.pt"
     layer = 8
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32
+    device = "cuda" if th.cuda.is_available() else "cpu"
+    dtype = th.float32
 
     model_name = "EleutherAI/pythia-160m-deduped"
 

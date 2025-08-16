@@ -1,8 +1,8 @@
 import os
 from tqdm import trange
 from matplotlib import pyplot as plt
-import torch
-from src.exp_utils import compute_or_load_llm_artifacts, compute_or_load_sae
+import torch as th
+from src.exp_utils import compute_or_load_llm_artifacts, compute_or_load_sae_artifacts
 from src.project_config import PLOTS_DIR
 
 
@@ -47,7 +47,9 @@ def plot_num_active_stories(
         layer_idx: Layer index for filename
         threshold: Threshold used to determine active latents
     """
-    save_fname = f"num_active_BP_model-{model_str}_{sae_str}_layer-{layer_idx}_thresh-{threshold:.0e}.png"
+    save_fname = (
+        f"num_active_BP_model-{model_str}_{sae_str}_layer-{layer_idx}_thresh-{threshold:.0e}.png"
+    )
     save_path = os.path.join(PLOTS_DIR, save_fname)
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
@@ -62,9 +64,7 @@ def plot_num_active_stories(
     plt.close()
 
 
-def plot_latent_acts_distribution(
-    latent_acts_BPS, model_str, sae_str, layer_idx, bins=100
-):
+def plot_latent_acts_distribution(latent_acts_BPS, model_str, sae_str, layer_idx, bins=100):
     """
     Plot the distribution of all flattened latent activations.
 
@@ -79,7 +79,7 @@ def plot_latent_acts_distribution(
     save_path = os.path.join(PLOTS_DIR, save_fname)
 
     # Flatten all latent activations
-    flattened_acts = latent_acts_BPS.flatten().cpu().to(torch.float32).numpy()
+    flattened_acts = latent_acts_BPS.flatten().cpu().to(th.float32).numpy()
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
 
@@ -128,7 +128,9 @@ def plot_num_active_thresholds_single_story(
         thresholds: List of threshold values to plot
         fvu_BP: FVU tensor with shape (batch, position)
     """
-    save_fname = f"num_active_thresholds_story-{story_idx}_model-{model_str}_{sae_str}_layer-{layer_idx}.png"
+    save_fname = (
+        f"num_active_thresholds_story-{story_idx}_model-{model_str}_{sae_str}_layer-{layer_idx}.png"
+    )
     save_path = os.path.join(PLOTS_DIR, save_fname)
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
@@ -184,9 +186,7 @@ def plot_mean_stats_across_stories(
         layer_idx: Layer index for filename
         thresholds: List of threshold values to plot
     """
-    save_fname = (
-        f"mean_stats_across_stories_model-{model_str}_{sae_str}_layer-{layer_idx}.png"
-    )
+    save_fname = f"mean_stats_across_stories_model-{model_str}_{sae_str}_layer-{layer_idx}.png"
     save_path = os.path.join(PLOTS_DIR, save_fname)
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 9))
@@ -197,9 +197,7 @@ def plot_mean_stats_across_stories(
     # Top subplot: Mean number of active latents with 95% CI bands
     for threshold in thresholds:
         # Compute number of active latents for this threshold
-        num_active_BP = (latent_acts_BPS.abs() > threshold).sum(
-            dim=-1
-        )  # (batch, position)
+        num_active_BP = (latent_acts_BPS.abs() > threshold).sum(dim=-1)  # (batch, position)
 
         mean_num_active = []
         ci_num_active = []
@@ -224,14 +222,12 @@ def plot_mean_stats_across_stories(
                 ci_num_active.append(ci_val)
                 positions.append(pos)
 
-        positions = torch.tensor(positions)
-        mean_num_active = torch.tensor(mean_num_active)
-        ci_num_active = torch.tensor(ci_num_active)
+        positions = th.tensor(positions)
+        mean_num_active = th.tensor(mean_num_active)
+        ci_num_active = th.tensor(ci_num_active)
 
         # Plot mean line
-        ax1.plot(
-            positions, mean_num_active, label=f"Threshold {threshold:.2f}", linewidth=2
-        )
+        ax1.plot(positions, mean_num_active, label=f"Threshold {threshold:.2f}", linewidth=2)
 
         # Plot 95% CI band
         ax1.fill_between(
@@ -271,9 +267,9 @@ def plot_mean_stats_across_stories(
             ci_fvu.append(ci_val)
             positions.append(pos)
 
-    positions = torch.tensor(positions)
-    mean_fvu = torch.tensor(mean_fvu)
-    ci_fvu = torch.tensor(ci_fvu)
+    positions = th.tensor(positions)
+    mean_fvu = th.tensor(mean_fvu)
+    ci_fvu = th.tensor(ci_fvu)
 
     # Plot mean line
     ax2.plot(positions, mean_fvu, color="red", linewidth=2, label="Mean FVU")
@@ -317,7 +313,7 @@ if __name__ == "__main__":
     model_str = model_name.split("/")[-1]
     sae_str = sae_name.split("/")[-1]
 
-    fvu_BP, latent_acts_BPS, latent_indices_BPK, mask_BP = compute_or_load_sae(
+    fvu_BP, latent_acts_BPS, latent_indices_BPK, mask_BP = compute_or_load_sae_artifacts(
         sae_name=sae_name,
         model_name=model_name,
         num_stories=num_stories,

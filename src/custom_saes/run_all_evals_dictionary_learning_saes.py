@@ -1,7 +1,7 @@
 import json
 import os
 
-import torch
+import torch as th
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
 
@@ -99,7 +99,7 @@ def load_dictionary_learning_sae(
     location: str,
     model_name,
     device: str,
-    dtype: torch.dtype,
+    dtype: th.dtype,
     layer: int | None = None,
     download_location: str = "downloaded_saes",
 ) -> base_sae.BaseSAE:
@@ -130,7 +130,7 @@ def verify_saes_load(
     sae_locations: list[str],
     model_name: str,
     device: str,
-    dtype: torch.dtype,
+    dtype: th.dtype,
 ):
     """Verify that all SAEs load correctly. Useful to check this before a big evaluation run."""
     for sae_location in sae_locations:
@@ -412,7 +412,7 @@ if __name__ == "__main__":
 
         llm_batch_size = MODEL_CONFIGS[model_name]["batch_size"]
         str_dtype = MODEL_CONFIGS[model_name]["dtype"]
-        torch_dtype = general_utils.str_to_dtype(str_dtype)
+        th_dtype = general_utils.str_to_dtype(str_dtype)
 
         sae_locations = get_all_hf_repo_autoencoders(repo_id)
 
