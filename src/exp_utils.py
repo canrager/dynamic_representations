@@ -165,7 +165,6 @@ def compute_or_load_llm_artifacts(
 
     is_existing_each = [os.path.exists(artifact_dirs[k]) for k in artifacts_to_check]
     is_existing = all(is_existing_each)
-    print(f"Are all existing? {is_existing}")
 
     if not is_existing or cfg.llm.force_recompute:
         acts_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_llm_artifacts(
@@ -178,7 +177,8 @@ def compute_or_load_llm_artifacts(
                 tokens_BP, loaded_word_lists, loaded_word_labels, cfg
             )
             # Save token labels
-            th.save(token_labels_BP, artifact_dirs["labels"])
+            if cfg.save_artifacts:
+                th.save(token_labels_BP, artifact_dirs["labels"])
         else:
             token_labels_BP = None
     else:
@@ -267,7 +267,7 @@ class SAEArtifact:
     sae_cfg: any
 
 def compute_or_load_sae_artifacts(
-    llm_act_BPD, cfg,
+    llm_act_BPD, cfg
 ) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
     """
     Compute or load SAE results for a given model, layer, and number of stories.
@@ -291,8 +291,9 @@ def compute_or_load_sae_artifacts(
             recon_BPD,
             cfg.sae
         )
-        with open(sae_artifact_path, "wb") as f:
-            th.save(sae_artifact, f)
+        if cfg.save_artifacts:
+            with open(sae_artifact_path, "wb") as f:
+                th.save(sae_artifact, f)
         
         del sae
         th.cuda.empty_cache()

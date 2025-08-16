@@ -300,14 +300,15 @@ def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
     )
 
     # Save artifacts
-    with open(os.path.join(INTERIM_DIR, f"activations_{hash(cfg)}.pt"), "wb") as f:
-        th.save(all_acts_LbPD, f, pickle_protocol=5)
-    with open(os.path.join(INTERIM_DIR, f"story_idxs_{hash(cfg)}.pt"), "wb") as f:
-        th.save(selected_story_idxs, f, pickle_protocol=5)
-    with open(os.path.join(INTERIM_DIR, f"tokens_{hash(cfg)}.pt"), "wb") as f:
-        th.save(inputs_BP, f, pickle_protocol=5)
-    with open(os.path.join(INTERIM_DIR, f"masks_{hash(cfg)}.pt"), "wb") as f:
-        th.save(all_masks_BP, f, pickle_protocol=5)
+    if cfg.save_artifacts:
+        with open(os.path.join(INTERIM_DIR, f"activations_{hash(cfg)}.pt"), "wb") as f:
+            th.save(all_acts_LbPD, f, pickle_protocol=5)
+        with open(os.path.join(INTERIM_DIR, f"story_idxs_{hash(cfg)}.pt"), "wb") as f:
+            th.save(selected_story_idxs, f, pickle_protocol=5)
+        with open(os.path.join(INTERIM_DIR, f"tokens_{hash(cfg)}.pt"), "wb") as f:
+            th.save(inputs_BP, f, pickle_protocol=5)
+        with open(os.path.join(INTERIM_DIR, f"masks_{hash(cfg)}.pt"), "wb") as f:
+            th.save(all_masks_BP, f, pickle_protocol=5)
 
     # Memory cleanup
     del model

@@ -16,7 +16,6 @@ import hashlib
 from src.project_config import INPUTS_DIR, PLOTS_DIR, MODELS_DIR, DEVICE
 from src.exp_utils import (
     compute_or_load_llm_artifacts,
-    load_activation_split,
     compute_or_load_sae_artifacts,
 )
 from src.model_utils import load_tokenizer
@@ -54,22 +53,23 @@ class Config:
     debug: bool = False
     device: str = DEVICE
     dtype: th.dtype = th.float32
+    save_artifacts: bool = False
 
-    # llm: LLMConfig = LLMConfig("google/gemma-2-2b", 12, 100, None, force_recompute=False)
-    llm: LLMConfig = LLMConfig("meta-llama/Llama-3.1-8B", 12, 100, None, force_recompute=False)
+    llm: LLMConfig = LLMConfig("google/gemma-2-2b", 12, 100, None, force_recompute=False)
+    # llm: LLMConfig = LLMConfig("meta-llama/Llama-3.1-8B", 12, 100, None, force_recompute=False)
     sae: SAEConfig = None
     saes = (
         SAEConfig(
             IdentityDict, 4096, 100, "Residual stream neurons", None, force_recompute=False
         ),  # This is the LLM residual stream baseline
-        # SAEConfig(
-        #     AutoEncoder,
-        #     4096,
-        #     100,
-        #     "L1 ReLU saebench",
-        #     "artifacts/trained_saes/Standard_gemma-2-2b__0108/resid_post_layer_12/trainer_2/ae.pt",
-        #     force_recompute=True,
-        # ),
+        SAEConfig(
+            AutoEncoder,
+            4096,
+            100,
+            "L1 ReLU saebench",
+            "artifacts/trained_saes/Standard_gemma-2-2b__0108/resid_post_layer_12/trainer_2/ae.pt",
+            force_recompute=True,
+        ),
     )
     dataset = DatasetConfig("SimpleStories/SimpleStories", "story")
     # dataset = DatasetConfig("monology/pile-uncopyrighted", "text")
@@ -128,7 +128,7 @@ def plot_sorted_distribution_per_sae(sae_act_results):
 
         color_idx += 1
 
-    # ax.set_xlim((-5, 200))
+    ax.set_xlim((-5, 200))
     # ax.set_yscale("log")
 
     ax.set_xlabel("Sorted Component Index", fontsize=14)
