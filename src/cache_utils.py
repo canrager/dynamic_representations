@@ -263,7 +263,7 @@ def batch_sae_cache(sae, act_BPD, sae_cfg):
 
 def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
     # Load model
-    model, submodules, hidden_dim = load_nnsight_model(cfg.llm)
+    model, submodules, hidden_dim = cfg.loaded_llm
 
     # Load dataset
     if loaded_dataset_sequences is not None:
@@ -301,18 +301,18 @@ def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
 
     # Save artifacts
     if cfg.save_artifacts:
-        with open(os.path.join(INTERIM_DIR, f"activations_{hash(cfg)}.pt"), "wb") as f:
+        with open(os.path.join(INTERIM_DIR, f"activations_{cfg.exp_name}.pt"), "wb") as f:
             th.save(all_acts_LbPD, f, pickle_protocol=5)
-        with open(os.path.join(INTERIM_DIR, f"story_idxs_{hash(cfg)}.pt"), "wb") as f:
+        with open(os.path.join(INTERIM_DIR, f"story_idxs_{cfg.exp_name}.pt"), "wb") as f:
             th.save(selected_story_idxs, f, pickle_protocol=5)
-        with open(os.path.join(INTERIM_DIR, f"tokens_{hash(cfg)}.pt"), "wb") as f:
+        with open(os.path.join(INTERIM_DIR, f"tokens_{cfg.exp_name}.pt"), "wb") as f:
             th.save(inputs_BP, f, pickle_protocol=5)
-        with open(os.path.join(INTERIM_DIR, f"masks_{hash(cfg)}.pt"), "wb") as f:
+        with open(os.path.join(INTERIM_DIR, f"masks_{cfg.exp_name}.pt"), "wb") as f:
             th.save(all_masks_BP, f, pickle_protocol=5)
 
-    # Memory cleanup
-    del model
-    th.cuda.empty_cache()
-    gc.collect()
+    # # Memory cleanup
+    # del model
+    # th.cuda.empty_cache()
+    # gc.collect()
 
     return all_acts_LbPD, all_masks_BP, inputs_BP, selected_story_idxs

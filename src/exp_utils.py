@@ -151,11 +151,11 @@ def compute_or_load_llm_artifacts(
     """
 
     artifact_fnames = {
-        "act": f"activations_{hash(cfg)}.pt",
-        "mask": f"masks_{hash(cfg)}.pt",
-        "tokens": f"tokens_{hash(cfg)}.pt",
-        "all_idxs": f"story_idxs_{hash(cfg)}.pt",
-        "labels": f"token_labels_{hash(cfg)}.pt",
+        "act": f"activations_{cfg.exp_name}.pt",
+        "mask": f"masks_{cfg.exp_name}.pt",
+        "tokens": f"tokens_{cfg.exp_name}.pt",
+        "all_idxs": f"story_idxs_{cfg.exp_name}.pt",
+        "labels": f"token_labels_{cfg.exp_name}.pt",
     }
     artifact_dirs = {k: os.path.join(INTERIM_DIR, v) for k, v in artifact_fnames.items()}
     # Check if we need labels (only check label artifacts if word labels are provided)
@@ -266,9 +266,8 @@ class SAEArtifact:
     recon_BPD: th.Tensor
     sae_cfg: any
 
-def compute_or_load_sae_artifacts(
-    llm_act_BPD, cfg
-) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+
+def compute_or_load_sae_artifacts(llm_act_BPD, cfg) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
     """
     Compute or load SAE results for a given model, layer, and number of stories.
 
@@ -284,17 +283,11 @@ def compute_or_load_sae_artifacts(
         sae = load_sae(cfg)
         recon_BPD, sae_act_BPS, sae_indices_BPS = batch_sae_cache(sae, llm_act_BPD, cfg.sae)
 
-        sae_artifact = SAEArtifact(
-            llm_act_BPD,
-            sae_act_BPS,
-            sae_indices_BPS,
-            recon_BPD,
-            cfg.sae
-        )
+        sae_artifact = SAEArtifact(llm_act_BPD, sae_act_BPS, sae_indices_BPS, recon_BPD, cfg.sae)
         if cfg.save_artifacts:
             with open(sae_artifact_path, "wb") as f:
                 th.save(sae_artifact, f)
-        
+
         del sae
         th.cuda.empty_cache()
         gc.collect()
@@ -304,6 +297,7 @@ def compute_or_load_sae_artifacts(
         print(f"SAE results loaded from: {sae_artifact_path}")
 
     return sae_artifact
+
 
 def save_svd_results(
     U_LbC: th.Tensor,

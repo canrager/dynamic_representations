@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import hashlib
 
-from src.project_config import INPUTS_DIR, PLOTS_DIR, MODELS_DIR, DEVICE
+from src.project_config import INPUTS_DIR, PLOTS_DIR, MODELS_DIR, DEVICE, LLMConfig, DatasetConfig, SAEConfig
 from src.exp_utils import (
     compute_or_load_llm_artifacts,
     compute_or_load_sae_artifacts,
@@ -21,31 +21,6 @@ from src.exp_utils import (
 from src.model_utils import load_tokenizer
 
 from dictionary_learning.dictionary import IdentityDict, AutoEncoder
-
-
-@dataclass(frozen=True)
-class LLMConfig:
-    name: str
-    layer_idx: int
-    batch_size: int
-    revision: str | None
-    force_recompute: bool
-
-
-@dataclass(frozen=True)
-class SAEConfig:
-    dict_class: Any
-    dict_size: int
-    batch_size: int
-    name: str
-    local_filename: str | None
-    force_recompute: bool
-
-
-@dataclass(frozen=True)
-class DatasetConfig:
-    name: str
-    hf_text_identifier: str
 
 
 @dataclass(frozen=True)
