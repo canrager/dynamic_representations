@@ -811,6 +811,45 @@ def plot_u_statistic_comparison(id_original_P: th.Tensor, id_surrogate_P: th.Ten
     plt.show()
 
 
+def plot_u_statistic_overlay(id_original_P: th.Tensor, id_surrogate_P: th.Tensor, cfg: Config):
+    """
+    Plot comparison of u-statistic intrinsic dimensionality for original vs surrogate data.
+    Shows both curves in a single subplot with different colors.
+
+    Args:
+        id_original_P: U-statistic values for original data of shape (P,)
+        id_surrogate_P: U-statistic values for surrogate data of shape (P,)
+        cfg: Configuration object
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    positions = th.arange(len(id_original_P))
+
+    # Plot both curves on same axis
+    ax.plot(positions, id_original_P.cpu(), linewidth=2, color="C0", marker="o", markersize=3, label="Original")
+    ax.plot(positions, id_surrogate_P.cpu(), linewidth=2, color="C1", marker="s", markersize=3, label="Surrogate")
+
+    ax.set_xlabel("Token Position")
+    ax.set_ylabel("U-Statistic")
+    ax.set_title(f"U-Statistic: Original vs Surrogate\n{cfg.llm.name} Layer {cfg.llm.layer_idx}")
+    ax.grid(True, alpha=0.3)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.legend()
+
+    # Save plot
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    model_name_clean = cfg.llm.name.replace("/", "_")
+    plot_path = os.path.join(
+        PLOTS_DIR,
+        f"u_statistic_overlay_{model_name_clean}_layer_{cfg.llm.layer_idx}.png",
+    )
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    print(f"U-statistic overlay plot saved to: {plot_path}")
+    plt.show()
+
+
 def plot_intrinsic_dimensionality_results(
     results_original: dict, results_surrogate: dict, cfg: Config, analysis_type: str = "cumulative"
 ):
@@ -980,12 +1019,21 @@ if __name__ == "__main__":
     print(f"Analyzing intrinsic dimensionality for {cfg.llm.name} layer {cfg.llm.layer_idx}")
     print(f"Activation tensor shape: {llm_act_BPD.shape}")
 
-    # # Generate surrogate data
-    # print("\nGenerating phase-randomized surrogate data...")
-    # # llm_act_surrogate_BPD = phase_randomized_surrogate(llm_act_BPD)
-    # llm_act_surrogate_BPD = th.zeros_like(llm_act_BPD)
+    # Generate surrogate data
+    print("\nGenerating phase-randomized surrogate data...")
+    llm_act_surrogate_BPD = phase_randomized_surrogate(llm_act_BPD)
 
     # plot_pca_full_original(llm_act_BPD, cfg)
 
-    id_P = u_statistic(llm_act_BPD, cfg)
-    plot_u_statistic(id_P, cfg)
+    # Compute u-statistics for both original and surrogate data
+    id_original_P = u_statistic(llm_act_BPD, cfg)
+    id_surrogate_P = u_statistic(llm_act_surrogate_BPD, cfg)
+    
+    # Plot individual u-statistic
+    plot_u_statistic(id_original_P, cfg)
+    
+    # Plot comparison (side by side)
+    plot_u_statistic_comparison(id_original_P, id_surrogate_P, cfg)
+    
+    # Plot overlay (single subplot)
+    plot_u_statistic_overlay(id_original_P, id_surrogate_P, cfg)
