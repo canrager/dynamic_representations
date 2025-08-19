@@ -30,8 +30,9 @@ from src.project_config import (
 from src.exp_utils import (
     compute_or_load_llm_artifacts,
     compute_or_load_sae_artifacts,
+    compute_centered_svd,
 )
-from src.model_utils import load_tokenizer, load_nnsight_model
+from src.model_utils import load_tokenizer, load_nnsight_model, load_sae
 
 from dictionary_learning.dictionary import IdentityDict, AutoEncoder
 
@@ -47,15 +48,15 @@ class Config:
     debug: bool = False
     device: str = DEVICE
     dtype: th.dtype = th.float32
-    save_artifacts: bool = False
-    force_recompute: bool = True
-    exp_name: str = "intrinsic_dimensionality"
+    save_artifacts: bool = True
+    force_recompute: bool = False
+    exp_name: str = "intrinsic_dimensionality2000"
 
     loaded_llm: Tuple = None
 
-    # llm: LLMConfig = LLMConfig("openai-community/gpt2", 6, 100, None, force_recompute)
+    llm: LLMConfig = LLMConfig("openai-community/gpt2", 6, 100, None, force_recompute)
     # llm: LLMConfig = LLMConfig("google/gemma-2-2b", 12, 100, None, force_recompute)
-    llm: LLMConfig = LLMConfig("meta-llama/Llama-3.1-8B", 12, 100, None, force_recompute)
+    # llm: LLMConfig = LLMConfig("meta-llama/Llama-3.1-8B", 12, 10, None, force_recompute)
 
     dataset: DatasetConfig = DatasetConfig("monology/pile-uncopyrighted", "text")
     datasets: Tuple[DatasetConfig] = (
@@ -64,10 +65,21 @@ class Config:
         DatasetConfig("NeelNanda/code-10k", "text"),
     )
 
-    num_total_stories: int = 50
+    sae: SAEConfig = (
+        SAEConfig(
+            AutoEncoder,
+            4096,
+            100,
+            "L1 ReLU saebench",
+            "artifacts/trained_saes/Standard_gemma-2-2b__0108/resid_post_layer_12/trainer_2/ae.pt",
+            force_recompute=True,
+        ),
+    )
+
+    num_total_stories: int = 2000
     selected_story_idxs: Optional[List[int]] = None
     omit_BOS_token: bool = True
-    num_tokens_per_story: int = 25
+    num_tokens_per_story: int = 500
     do_train_test_split: bool = False
     num_train_stories: int = 75
 
@@ -78,6 +90,25 @@ class Config:
     # For trajectory-wise analysis, only PCA works reliably with small sample sizes
     id_methods: List[str] = dataclasses.field(default_factory=lambda: ["fisher", "lpca", "pca"])
     normalize: bool = True
+
+
+def u_statistic(acts_BPD: th.Tensor, cfg):
+    acts_BPD = acts_BPD.to(cfg.device)
+    B, P, D = acts_BPD.shape
+    id_P = th.zeros(P)
+
+    # mean_D = acts_BPD.mean(dim=(0, 1))
+    # acts_BPD = acts_BPD - mean_D
+    acts_normalized_BPD = acts_BPD / acts_BPD.norm(dim=-1, keepdim=True)
+
+    for p in range(P):
+        X = acts_normalized_BPD[:, p, :]
+        gram = X @ X.T
+        fro2 = (gram**2).sum()
+
+        id_P[p] = (B**2 - B) / (fro2 - B)
+
+    return id_P
 
 
 def phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
@@ -120,7 +151,6 @@ def compute_intrinsic_dimensionality_fisher(act_train_BPD: th.Tensor) -> float:
     Returns:
         Estimated intrinsic dimensionality
     """
-    max_num_samples = 500
 
     # Convert to numpy for skdim
     B, P, D = act_train_BPD.shape
@@ -259,6 +289,34 @@ def knn_k_sweep(
     return id_test_kBP
 
 
+def get_dictionary(mode: str, act_BPD: th.Tensor, cfg):
+    match mode:
+        case "sae_encoder":
+            sae = load_sae(cfg)
+            mean = None
+            return sae.encoder, mean
+
+        case "pca":
+            _, _, D = act_BPD.shape
+            act_nD = act_BPD.reshape(-1, D)
+            n, D = act_nD.shape
+            assert n > D, "We need at least D+1 samples to fit a PCA Basis"
+
+            # Center the full dataset
+            train_mean_D = th.mean(act_nD, dim=0, keepdim=True)
+            X_train_centered = act_nD - train_mean_D
+
+            # Compute SVD over the full dataset
+            _, _, V = th.linalg.svd(X_train_centered, full_matrices=False)
+            # Project each sample onto the PCA components
+            # V is (D, min(B*P, D)) - transpose to get (min(B*P, D), D)
+            V_T = V.T  # (D, n_components)
+            return V_T, train_mean_D
+
+        case _:
+            raise ValueError("Unrecognized mode passed.")
+
+
 def compute_intrinsic_dimensionality_pca(
     act_train_BPD: th.Tensor, act_test_BPD: th.Tensor, variance_threshold: float = 0.95
 ) -> th.Tensor:
@@ -275,10 +333,12 @@ def compute_intrinsic_dimensionality_pca(
     Returns:
         Tensor of shape (B, P) with intrinsic dimensionalities for each sample
     """
-    _, _, D = act_train_BPD.shape
 
     # Reshape to (B*P, D) for PCA computation
+    _, _, D = act_train_BPD.shape
     act_nD = act_train_BPD.reshape(-1, D)
+    n, D = act_nD.shape
+    assert n > D, "We need at least D+1 samples to fit a PCA Basis"
 
     # Center the full dataset
     train_mean_D = th.mean(act_nD, dim=0, keepdim=True)
@@ -298,10 +358,9 @@ def compute_intrinsic_dimensionality_pca(
     sample_variances = projected**2  # (B*P, n_components)
 
     # Normalize by total variance for each sample
-    total_sample_variance = th.sum(sample_variances, dim=-1, keepdim=True)  # (B*P, 1)
+    total_variance_original = th.sum(X_test_centered**2, dim=-1, keepdim=True)
     # Avoid division by zero
-    total_sample_variance = th.clamp(total_sample_variance, min=1e-8)
-    sample_variance_ratios = sample_variances / total_sample_variance  # (B*P, n_components)
+    sample_variance_ratios = sample_variances / total_variance_original  # (B*P, n_components)
     sample_variance_ratios, _ = th.sort(sample_variance_ratios, dim=-1, descending=True)
 
     # Compute cumulative variance for each sample
@@ -494,6 +553,92 @@ def plot_trajectory_comparison(id_original_BP: th.Tensor, id_surrogate_BP: th.Te
     plt.show()
 
 
+def plot_pca_full_original(act_original_BPD: th.Tensor, cfg: Config, step_size: int = 25):
+    """
+    Simple plotting function for just the PCA "full" case on original data.
+    Shows mean trajectory with 95% confidence interval.
+
+    Args:
+        act_original_BPD: Original activation tensor of shape (B, P, D)
+        cfg: Configuration object
+        step_size: Only compute and plot every k-th position (default: 25)
+    """
+    B, P, _ = act_original_BPD.shape
+
+    # Select positions to analyze (every step_size positions)
+    positions_to_analyze = th.arange(0, P, step_size)
+    if positions_to_analyze[-1] != P - 1:  # Always include the last position
+        positions_to_analyze = th.cat([positions_to_analyze, th.tensor([P - 1])])
+
+    # Create single subplot
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    # Compute intrinsic dimensionality for "full" case only at selected positions
+    print(
+        f"Computing PCA ID for case: full at {len(positions_to_analyze)} positions (step_size={step_size})"
+    )
+
+    # Subsample the test data to only include selected positions
+    act_test_subsampled = act_original_BPD[:, positions_to_analyze, :]
+
+    # Compute PCA ID only on subsampled positions
+    id_selected = compute_intrinsic_dimensionality_pca(
+        act_train_BPD=act_original_BPD, act_test_BPD=act_test_subsampled
+    )
+
+    positions_selected = positions_to_analyze
+
+    # Compute mean and confidence interval
+    mean_values = th.mean(id_selected.float(), dim=0).detach().cpu().numpy()
+    std_values = th.std(id_selected.float(), dim=0).detach().cpu().numpy()
+    ci_values = 1.96 * std_values / (B**0.5)  # 95% confidence interval
+
+    # Plot mean line with markers
+    ax.plot(
+        positions_selected,
+        mean_values,
+        linewidth=2,
+        color="C0",
+        marker="o",
+        markersize=4,
+        label="Mean",
+    )
+
+    # Plot 95% CI band
+    ax.fill_between(
+        positions_selected,
+        mean_values - ci_values,
+        mean_values + ci_values,
+        alpha=0.2,
+        color="C0",
+        label="95% CI",
+    )
+
+    ax.set_title(f"PCA Full - Original Data (step_size={step_size})")
+    ax.set_xlabel("Token Position")
+    ax.set_ylabel("Intrinsic Dimensionality")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    # Overall title
+    fig.suptitle(
+        f"PCA Intrinsic Dimensionality (Full)\n{cfg.llm.name} Layer {cfg.llm.layer_idx}",
+        fontsize=14,
+    )
+
+    # Save plot
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    model_name_clean = cfg.llm.name.replace("/", "_")
+    plot_path = os.path.join(
+        PLOTS_DIR,
+        f"pca_full_original_{model_name_clean}_layer_{cfg.llm.layer_idx}_step{step_size}.png",
+    )
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    print(f"PCA full original plot saved to: {plot_path}")
+    plt.show()
+
+
 def plot_pca_case_comparison(
     act_original_BPD: th.Tensor, act_surrogate_BPD: th.Tensor, cfg: Config
 ):
@@ -579,6 +724,90 @@ def plot_pca_case_comparison(
     plt.tight_layout()
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     print(f"PCA case comparison plot saved to: {plot_path}")
+    plt.show()
+
+
+def plot_u_statistic(id_P: th.Tensor, cfg: Config):
+    """
+    Plot u-statistic intrinsic dimensionality across token positions.
+
+    Args:
+        id_P: U-statistic values of shape (P,)
+        cfg: Configuration object
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    positions = th.arange(len(id_P))
+    ax.plot(positions, id_P.cpu(), linewidth=2, color="C0", marker="o", markersize=3)
+
+    ax.set_xlabel("Token Position")
+    ax.set_ylabel("U-Statistic")
+    ax.set_title(f"U-Statistic Intrinsic Dimensionality\n{cfg.llm.name} Layer {cfg.llm.layer_idx}")
+    ax.grid(True, alpha=0.3)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    # Save plot
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    model_name_clean = cfg.llm.name.replace("/", "_")
+    plot_path = os.path.join(
+        PLOTS_DIR,
+        f"u_statistic_{model_name_clean}_layer_{cfg.llm.layer_idx}.png",
+    )
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    print(f"U-statistic plot saved to: {plot_path}")
+    plt.show()
+
+
+def plot_u_statistic_comparison(id_original_P: th.Tensor, id_surrogate_P: th.Tensor, cfg: Config):
+    """
+    Plot comparison of u-statistic intrinsic dimensionality for original vs surrogate data.
+    Creates two subplots side by side.
+
+    Args:
+        id_original_P: U-statistic values for original data of shape (P,)
+        id_surrogate_P: U-statistic values for surrogate data of shape (P,)
+        cfg: Configuration object
+    """
+    fig, (ax_orig, ax_surr) = plt.subplots(1, 2, figsize=(12, 5))
+
+    positions = th.arange(len(id_original_P))
+
+    # Plot original data
+    ax_orig.plot(positions, id_original_P.cpu(), linewidth=2, color="C0", marker="o", markersize=3)
+    ax_orig.set_xlabel("Token Position")
+    ax_orig.set_ylabel("U-Statistic")
+    ax_orig.set_title("Original")
+    ax_orig.grid(True, alpha=0.3)
+    ax_orig.set_xscale("log")
+    ax_orig.set_yscale("log")
+
+    # Plot surrogate data
+    ax_surr.plot(positions, id_surrogate_P.cpu(), linewidth=2, color="C1", marker="o", markersize=3)
+    ax_surr.set_xlabel("Token Position")
+    ax_surr.set_ylabel("U-Statistic")
+    ax_surr.set_title("Surrogate")
+    ax_surr.grid(True, alpha=0.3)
+    ax_surr.set_xscale("log")
+    ax_surr.set_yscale("log")
+
+    # Overall title
+    fig.suptitle(
+        f"U-Statistic Comparison: Original vs Surrogate\n{cfg.llm.name} Layer {cfg.llm.layer_idx}",
+        fontsize=14,
+    )
+
+    # Save plot
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+    model_name_clean = cfg.llm.name.replace("/", "_")
+    plot_path = os.path.join(
+        PLOTS_DIR,
+        f"u_statistic_comparison_{model_name_clean}_layer_{cfg.llm.layer_idx}.png",
+    )
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    print(f"U-statistic comparison plot saved to: {plot_path}")
     plt.show()
 
 
@@ -751,9 +980,12 @@ if __name__ == "__main__":
     print(f"Analyzing intrinsic dimensionality for {cfg.llm.name} layer {cfg.llm.layer_idx}")
     print(f"Activation tensor shape: {llm_act_BPD.shape}")
 
-    # Generate surrogate data
-    print("\nGenerating phase-randomized surrogate data...")
-    llm_act_surrogate_BPD = phase_randomized_surrogate(llm_act_BPD)
+    # # Generate surrogate data
+    # print("\nGenerating phase-randomized surrogate data...")
+    # # llm_act_surrogate_BPD = phase_randomized_surrogate(llm_act_BPD)
+    # llm_act_surrogate_BPD = th.zeros_like(llm_act_BPD)
 
+    # plot_pca_full_original(llm_act_BPD, cfg)
 
-    plot_pca_case_comparison(llm_act_BPD, llm_act_surrogate_BPD, cfg)
+    id_P = u_statistic(llm_act_BPD, cfg)
+    plot_u_statistic(id_P, cfg)
