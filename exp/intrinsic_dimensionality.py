@@ -51,7 +51,7 @@ class Config:
     device: str = DEVICE
     dtype: th.dtype = th.float32
     save_artifacts: bool = True
-    force_recompute: bool = False
+    force_recompute: bool = True
 
     loaded_llm: Tuple = None
 
@@ -1357,12 +1357,14 @@ def subsample_P(
 
 
 def shannon_entropy(act_BD):
+    # Convert to probabilities by applying softmax
+    probs = th.softmax(act_BD, dim=1)  # Shape: (B, D)
     eps = 1e-8
-    log_probs = th.log(act_BD + eps)
-    entropy = -th.sum(act_BD * log_probs, dim=1)  # Shape: (B,)
+    log_probs = th.log(probs + eps)
+    entropy = -th.sum(probs * log_probs, dim=1)  # Shape: (B,)
     return entropy
 
-def compute_entropy(act_BPD):
+def compute_entropy_across_time(act_BPD):
     B, P, D = act_BPD.shape
     entropy_BP = th.zeros(B, P)
     for p in range(P):
@@ -1394,7 +1396,7 @@ def plot_entropy_comparison(entropy_original_BP: th.Tensor, entropy_surrogate_BP
     
     # Plot original distributions
     for i, p in enumerate(p_indices):
-        entropy_values = entropy_original_BP[:, p].detach().cpu().numpy()
+        entropy_values = entropy_original_BP[:, i].detach().cpu().numpy()
         ax_orig.hist(entropy_values, bins=20, alpha=0.7, color=colors[i], 
                     label=f'p={p.item()}', density=True)
     
@@ -1406,7 +1408,7 @@ def plot_entropy_comparison(entropy_original_BP: th.Tensor, entropy_surrogate_BP
     
     # Plot surrogate distributions
     for i, p in enumerate(p_indices):
-        entropy_values = entropy_surrogate_BP[:, p].detach().cpu().numpy()
+        entropy_values = entropy_surrogate_BP[:, i].detach().cpu().numpy()
         ax_surr.hist(entropy_values, bins=20, alpha=0.7, color=colors[i], 
                     label=f'p={p.item()}', density=True)
     
@@ -1438,7 +1440,7 @@ def plot_entropy_comparison(entropy_original_BP: th.Tensor, entropy_surrogate_BP
 if __name__ == "__main__":
     cfg = Config()
 
-    # cfg.loaded_llm = load_nnsight_model(cfg.llm)
+    cfg.loaded_llm = load_nnsight_model(cfg.llm)
 
     llm_act_LBPD, masks_BP, tokens_BP, token_labels_BP, dataset_story_idxs = (
         compute_or_load_llm_artifacts(cfg)
@@ -1454,7 +1456,7 @@ if __name__ == "__main__":
     llm_act_surrogate_BPD = compute_or_load_surrogate_artifacts(cfg, llm_act_BPD)
 
 
-    exp = "mds"
+    exp = "entropy"
 
 
     if exp == "mds":
@@ -1488,8 +1490,8 @@ if __name__ == "__main__":
         llm_act_surrogate_BpD, _ = subsample_P(llm_act_surrogate_BPD, cfg)
 
 
-        entropy_orig_Bp = compute_entropy(llm_act_BpD)
-        entropy_surr_Bp = compute_entropy(llm_act_surrogate_BpD)
+        entropy_orig_Bp = compute_entropy_across_time(llm_act_BpD)
+        entropy_surr_Bp = compute_entropy_across_time(llm_act_surrogate_BpD)
         
         # Subsample positions for plotting if needed
         
