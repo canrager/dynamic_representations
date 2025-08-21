@@ -6,6 +6,7 @@ import torch as th
 from tqdm import trange
 from dataclasses import dataclass
 import gc
+import numpy as np
 
 from src.project_config import INTERIM_DIR, MODELS_DIR, INPUTS_DIR, DEVICE
 from src.model_utils import load_tokenizer, load_sae
@@ -165,6 +166,10 @@ def compute_or_load_llm_artifacts(
 
     is_existing_each = [os.path.exists(artifact_dirs[k]) for k in artifacts_to_check]
     is_existing = all(is_existing_each)
+    if cfg.verbose:
+        print(f"looking for files {"\n".join(artifact_dirs.values())}")
+        print(f"Are all existing? {is_existing}")
+
 
     if not is_existing or cfg.llm.force_recompute:
         acts_LBPD, masks_BP, tokens_BP, dataset_story_idxs = compute_llm_artifacts(
@@ -216,6 +221,74 @@ def compute_or_load_llm_artifacts(
             token_labels_BP = [seq[: cfg.num_tokens_per_story] for seq in token_labels_BP]
 
     return acts_LBPD, masks_BP, tokens_BP, token_labels_BP, dataset_story_idxs
+
+
+def phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
+    """
+    Phase-randomized surrogate per (B, D) series along time P.
+    Preserves power spectrum per dim, randomizes phases -> stationary.
+
+    Args:
+        X_BPD: Tensor of shape (B, P, D)
+
+    Returns:
+        Phase-randomized surrogate with same shape
+    """
+    B, P, D = X_BPD.shape
+    X_sur = th.empty_like(X_BPD)
+    X_np = X_BPD.detach().cpu().numpy()
+
+    for b in range(B):
+        for d in range(D):
+            x = X_np[b, :, d]
+            fft_x = np.fft.rfft(x)
+            mag = np.abs(fft_x)
+            # random phases in [0, 2π), keep DC/Nyquist magnitudes
+            rand_phase = np.exp(1j * np.random.uniform(0.0, 2 * np.pi, size=fft_x.shape))
+            # ensure DC (0-freq) has zero phase
+            rand_phase[0] = 1.0 + 0.0j
+            fft_new = mag * rand_phase
+            x_new = np.fft.irfft(fft_new, n=P)
+            X_sur[b, :, d] = th.from_numpy(x_new).to(X_BPD)
+    return X_sur
+
+
+def compute_or_load_surrogate_artifacts(cfg, original_acts_BPD: th.Tensor) -> th.Tensor:
+    """
+    Compute or load phase-randomized surrogate data with caching.
+    
+    Args:
+        cfg: Configuration object
+        original_acts_BPD: Original activation tensor of shape (B, P, D)
+        
+    Returns:
+        Phase-randomized surrogate tensor with same shape
+    """
+    from src.project_config import INTERIM_DIR
+    
+    # Create artifact filename
+    surrogate_fname = f"surrogate_{cfg.exp_name}.pt"
+    surrogate_path = os.path.join(INTERIM_DIR, surrogate_fname)
+    
+    # Check if surrogate data exists and should be loaded
+    if os.path.exists(surrogate_path) and not cfg.force_recompute:
+        if cfg.verbose:
+            print(f"Loading surrogate data from {surrogate_path}")
+        surrogate_acts_BPD = th.load(surrogate_path)
+        return surrogate_acts_BPD
+    else:
+        if cfg.verbose:
+            print("Computing phase-randomized surrogate data...")
+        surrogate_acts_BPD = phase_randomized_surrogate(original_acts_BPD)
+        
+        # Save if configured
+        if cfg.save_artifacts:
+            os.makedirs(INTERIM_DIR, exist_ok=True)
+            th.save(surrogate_acts_BPD, surrogate_path)
+            if cfg.verbose:
+                print(f"Saved surrogate data to {surrogate_path}")
+        
+        return surrogate_acts_BPD
 
 
 def load_activation_split(cfg, loaded_dataset_sequences=None):

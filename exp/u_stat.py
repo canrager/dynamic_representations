@@ -27,6 +27,7 @@ from src.model_utils import load_tokenizer, load_nnsight_model, load_sae
 
 @dataclass
 class Config:
+    verbose: bool = True
     debug: bool = False
     device: str = DEVICE
     dtype: th.dtype = th.float32
@@ -180,60 +181,6 @@ def plot_u_statistic_comparison(id_original_P: th.Tensor, id_surrogate_P: th.Ten
     print(f"U-statistic comparison plot saved to: {plot_path}")
     plt.show()
 
-
-def plot_u_statistic_overlay(id_original_P: th.Tensor, id_surrogate_P: th.Tensor, cfg: Config):
-    """
-    Plot comparison of u-statistic intrinsic dimensionality for original vs surrogate data.
-    Shows both curves in a single subplot with different colors.
-
-    Args:
-        id_original_P: U-statistic values for original data of shape (P,)
-        id_surrogate_P: U-statistic values for surrogate data of shape (P,)
-        cfg: Configuration object
-    """
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    positions = th.arange(len(id_original_P))
-
-    # Plot both curves on same axis
-    ax.plot(
-        positions,
-        id_original_P.cpu(),
-        linewidth=2,
-        color="C0",
-        marker="o",
-        markersize=3,
-        label="Original",
-    )
-    ax.plot(
-        positions,
-        id_surrogate_P.cpu(),
-        linewidth=2,
-        color="C1",
-        marker="s",
-        markersize=3,
-        label="Surrogate",
-    )
-
-    ax.set_xlabel("Token Position")
-    ax.set_ylabel("U-Statistic")
-    ax.set_title(f"U-Statistic: Original vs Surrogate\n{cfg.llm.name} Layer {cfg.llm.layer_idx}")
-    ax.grid(True, alpha=0.3)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.legend()
-
-    # Save plot
-    os.makedirs(PLOTS_DIR, exist_ok=True)
-    model_name_clean = cfg.llm.name.replace("/", "_")
-    plot_path = os.path.join(
-        PLOTS_DIR,
-        f"u_statistic_overlay_{model_name_clean}_layer_{cfg.llm.layer_idx}.png",
-    )
-    plt.tight_layout()
-    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
-    print(f"U-statistic overlay plot saved to: {plot_path}")
-    plt.show()
 
 
 if __name__ == "__main__":
