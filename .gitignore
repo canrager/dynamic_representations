@@ -6,5 +6,9 @@ artifacts
 *.out
 *.log
 *.pt
-*.png
+*.pdf
 *.html
+*.lock
+
+trained*
+debug*

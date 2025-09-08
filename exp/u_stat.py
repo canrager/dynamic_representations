@@ -3,20 +3,11 @@ Compute intrinsic dimensionality of LLM activations across token positions
 """
 
 import torch as th
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import numpy as np
-import os
-import math
-import json
 from typing import Optional, List, Any, Tuple
-from dataclasses import dataclass, asdict
-from tqdm import tqdm, trange
+from dataclasses import asdict
 
-from src.project_config import PLOTS_DIR, DEVICE, LLMConfig, DatasetConfig, BaseConfig
-from src.exp_utils import compute_or_load_llm_artifacts, compute_or_load_surrogate_artifacts
-from src.model_utils import load_tokenizer, load_nnsight_model, load_sae
-from src.preprocessing_utils import load_subsampled_act_surr
+from src.project_config import BaseConfig
+from src.preprocessing_utils import load_subsampled_act_surr, run_parameter_sweep
 
 
 def u_statistic(acts_BPD: th.Tensor, cfg):
@@ -38,7 +29,10 @@ def u_statistic(acts_BPD: th.Tensor, cfg):
     return id_P
 
 
-def main(cfg):
+def run_single_experiment(cfg):
+    import json
+    import os
+    
     act_BPD, surr_BPD, p_indices = load_subsampled_act_surr(cfg)
     ustat_act_P = u_statistic(act_BPD, cfg)
     ustat_surr_P = u_statistic(surr_BPD, cfg)
@@ -53,31 +47,32 @@ def main(cfg):
         "results": results
     }
     
-    # Save
-    save_path = os.path.join(cfg.interim_dir, "u_stat_llm.json")
+    # Save using the filename from config
+    save_path = os.path.join(cfg.results_dir, f"{cfg.filename}.json")
+    os.makedirs(cfg.results_dir, exist_ok=True)
+    
     with open(save_path, 'w') as f:
         json.dump(artifact, f)
+    
+    print(f"Saved: {save_path}")
 
 
-if __name__ == "__main__":
 
-    cfg = BaseConfig(
-        # Debugging
+
+def main():
+    base_cfg = BaseConfig(
+        experiment_name="u_stat",
         verbose=False,
-        # LLM
         llm_name="meta-llama/Llama-3.1-8B",
         revision=None,
         layer_idx=16,
         llm_batch_size=100,
         llm_hidden_dim=4096,
         dtype="bfloat16",
-        # Dataset
         dataset_name="monology/pile-uncopyrighted",
         hf_text_identifier="text",
-        # 80GB, 15min on A6000 for 10_000 sequences, 500 tokens, bf16
         num_sequences=1_000,
         context_length=500,
-        # Preprocessing
         p_start=10,
         p_end=500,
         num_p=10,
@@ -85,5 +80,14 @@ if __name__ == "__main__":
         omit_bos=True,
         normalize_activations=False,
     )
+    
+    sweep_params = {
+        'llm_name': ['meta-llama/Llama-3.1-8B'],
+        'layer_idx': [0, 8, 16, 24, 31],
+    }
+    
+    run_parameter_sweep(base_cfg, sweep_params, run_single_experiment)
 
-    print(main(cfg))
+
+if __name__ == "__main__":
+    main()
