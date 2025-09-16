@@ -1,6 +1,4 @@
 import os
-import sys
-from typing import Optional
 from nnsight import LanguageModel
 import torch as th
 from transformers import (
@@ -10,7 +8,6 @@ from transformers import (
     BitsAndBytesConfig,
 )
 
-from sparsify import Sae
 from src.project_config import MODELS_DIR, DEVICE
 from src.custom_saes.relu_sae import load_dictionary_learning_relu_sae
 from src.custom_saes.topk_sae import load_dictionary_learning_topk_sae
@@ -27,35 +24,34 @@ def load_tokenizer(llm_name: str, cache_dir: str):
     return tokenizer
 
 
-def load_nnsight_model(llm_cfg):
+def load_nnsight_model(cfg):
     model = LanguageModel(
-        llm_cfg.name,
-        revision=llm_cfg.revision,
-        cache_dir=MODELS_DIR,
-        device_map=DEVICE,  # Use the defined device
+        cfg.llm.hf_name,
+        revision=cfg.llm.revision,
+        cache_dir=cfg.env.hf_cache_dir,
+        device_map=cfg.env.device,  # Use the defined device
+        dtype=cfg.env.dtype,
         dispatch=True,
     )
 
-    if "gpt2" in llm_cfg.name:
+    if "gpt2" in cfg.llm.name:
         print(model)
         print(model.config)
         hidden_dim = model.config.n_embd
-        submodules = [model.transformer.h[l] for l in range(model.config.n_layer)]
+        submodule = model.transformer.h[cfg.llm.layer_idx]
 
         # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
-        model.tokenizer = load_tokenizer(llm_cfg.name, cache_dir=MODELS_DIR)
+        model.tokenizer = load_tokenizer(cfg.llm.name, cache_dir=MODELS_DIR)
 
-    elif any([s in llm_cfg.name.lower() for s in ["llama", "gemma", "allenai", "qwen", "mistral"]]):
+    elif any([s in cfg.llm.name.lower() for s in ["llama", "gemma", "allenai", "qwen", "mistral"]]):
         print(model)
         print(model.config)
         hidden_dim = model.config.hidden_size
-        submodules = [
-            model.model.layers[l] for l in range(model.config.num_hidden_layers)
-        ]
+        submodule = model.model.layers[cfg.llm.layer_idx]
     else:
         raise ValueError("Unknown model")
 
-    return model, submodules, hidden_dim
+    return model, submodule, hidden_dim
 
 
 def load_hf_model(
@@ -117,36 +113,6 @@ def load_hf_model(
     model = th.compile(model)
 
     return model, tokenizer
-
-
-# def load_sae(sae_cfg):
-#     if "eleuther" in sae_cfg.sae_name.lower():
-#         sae_hookpoint_str = f"layers.{sae_cfg.layer_idx}"
-#         sae = Sae.load_from_hub(sae_cfg.sae_name, sae_hookpoint_str, cache_dir=MODELS_DIR)
-#         sae = sae.to(DEVICE)
-#     elif "saebench" in sae_cfg.sae_name.lower():
-#         # if sae_cfg.sae_architecture == "topk":
-#         #     sae = load_dictionary_learning_topk_sae(
-#         #         repo_id=sae_cfg.sae_repo_id,
-#         #         filename=sae_cfg.sae_filename,
-#         #         model_name=sae_cfg.llm_name,
-#         #         device=DEVICE,
-#         #         layer=sae_cfg.layer_idx,
-#         #         dtype=sae_cfg.dtype
-#         #     )
-#         # elif sae_cfg.sae_architecture == "relu":
-#         #     sae = load_dictionary_learning_relu_sae(
-#         #         repo_id=sae_cfg.sae_repo_id,
-#         #         filename=sae_cfg.sae_filename,
-#         #         model_name=sae_cfg.llm_name,
-#         #         device=DEVICE,
-#         #         layer=sae_cfg.layer_idx,
-#         #         dtype=sae_cfg.dtype
-#         #     )
-#     elif "neurons" in sae_cfg.sae_name.lower
-#     else:
-#         raise NotImplementedError
-#     return sae
 
 def load_sae(cfg):
     sae = cfg.sae.dict_class.from_pretrained(

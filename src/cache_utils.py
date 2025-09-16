@@ -13,6 +13,11 @@ import gc
 from src.model_utils import load_nnsight_model
 from src.project_config import DEVICE, MODELS_DIR, INTERIM_DIR, INPUTS_DIR
 
+DTYPE_STR_TO_TORCH = {
+    "float32": th.float32,
+    "bfloat16": th.bfloat16
+}
+
 def tokenize_from_sequences(tokenizer, sequences):
     # Tokenize a list of sequences, using all tokens, no max lenght
     tokenized = tokenizer.batch_encode_plus(
@@ -27,10 +32,16 @@ def tokenize_from_sequences(tokenizer, sequences):
     selected_story_idxs = list(range(len(sequences)))
     return inputs_BP, masks_BP, selected_story_idxs
 
-def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens, hf_text_identifier="story"):
+def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens):
     # Use stories with the same amounts of tokens
     # For equal weighting across position and avoiding padding errors
     # NOTE: exact tokenization varies by model, therefore, it can be that different models see different stories
+
+    if dataset_name == "SimpleStories/SimpleStories":
+        hf_text_identifier = "story"
+    else:
+        hf_text_identifier = "text"
+
 
     all_stories = load_dataset(path=dataset_name, cache_dir=MODELS_DIR, streaming=True)["train"]
 
@@ -125,27 +136,29 @@ def collect_from_local(tokenizer, dataset_name, num_sentences, num_tokens):
 
 def batch_llm_cache(
     model: LanguageModel,
-    submodules: List[Module],
+    submodule: Module,
     inputs_BP: Tensor,
     masks_BP: Tensor,
     hidden_dim: int,
     batch_size: int,
     device: str,
+    dtype: str,
     debug: bool = False,
 ) -> Tensor:
-    all_acts_LBPD = th.zeros(
+    
+    dtype = DTYPE_STR_TO_TORCH[dtype]
+    all_acts_BPD = th.zeros(
         (
-            len(submodules),
             inputs_BP.shape[0],
             inputs_BP.shape[1],
             hidden_dim,
-        )
+        ), dtype=dtype, device="cpu"
     )
     all_masks_BP = th.zeros(
         (
             inputs_BP.shape[0],
             inputs_BP.shape[1],
-        )
+        ), dtype=th.int, device="cpu"
     )
 
     for batch_start in trange(
@@ -158,6 +171,7 @@ def batch_llm_cache(
             "input_ids": batch_input_ids,
             "attention_mask": batch_mask,
         }
+        all_masks_BP[batch_start:batch_end] = batch_mask
 
         if debug:
             print(f"computing activations for batch {batch_start} to {batch_end}. Tokens:")
@@ -166,17 +180,57 @@ def batch_llm_cache(
                 print(decoded_tokens)
                 print()
 
-        all_masks_BP[batch_start:batch_end] = batch_mask
-        with (
-            th.inference_mode(),
-            model.trace(batch_inputs, scan=False, validate=False),
-        ):
-            for l, sm in enumerate(submodules):
-                all_acts_LBPD[l, batch_start:batch_end] = sm.output[0].save()
+        with th.inference_mode():
+            with model.trace(batch_inputs, scan=False, validate=False):
+                out = submodule.output
+                if isinstance(out, tuple):
+                    out = out[0]
+                out.save()
+        all_acts_BPD[batch_start:batch_end] = out.to("cpu")
 
-    all_acts_LBPD = all_acts_LBPD.to("cpu")
-    all_masks_BP = all_masks_BP.to("cpu")
-    return all_acts_LBPD, all_masks_BP
+        del batch_input_ids, batch_mask, batch_inputs, out
+        th.cuda.empty_cache()
+        gc.collect()
+
+    return all_acts_BPD, all_masks_BP
+
+
+def compute_llm_artifacts(cfg, model, submodule, loaded_dataset_sequences=None):
+    # Load dataset
+    if loaded_dataset_sequences is not None:
+        inputs_BP, masks_BP, _ = tokenize_from_sequences(
+            tokenizer=model.tokenizer,
+            sequences=loaded_dataset_sequences
+        )
+    elif cfg.data.hf_name.endswith(".json"):
+        inputs_BP, masks_BP, _ = collect_from_local(
+            tokenizer=model.tokenizer,
+            dataset_name=cfg.data.hf_name,
+            num_sentences=cfg.data.num_sequences,
+            num_tokens=cfg.data.context_length
+        )
+    else:
+        inputs_BP, masks_BP, _ = collect_from_hf(
+            tokenizer=model.tokenizer, 
+            dataset_name=cfg.data.hf_name, 
+            num_stories=cfg.data.num_sequences, 
+            num_tokens=cfg.data.context_length,
+        )
+
+    # Call batch_act_cache
+    all_acts_LbPD, all_masks_BP = batch_llm_cache(
+        model=model,
+        submodule=submodule,
+        inputs_BP=inputs_BP,
+        masks_BP=masks_BP,
+        hidden_dim=cfg.llm.hidden_dim,
+        batch_size=cfg.llm.batch_size,
+        device=cfg.env.device,
+        dtype=cfg.env.dtype,
+        debug=False,
+    )
+
+    return all_acts_LbPD, all_masks_BP, inputs_BP
 
 
 def batch_sae_cache_eleuther(
@@ -259,60 +313,3 @@ def batch_sae_cache(sae, act_BPD, sae_cfg):
         raise ValueError("SAE distribution unknown")
     
     return forward_output
-
-
-def compute_llm_artifacts(cfg, loaded_dataset_sequences=None):
-    # Load model
-    model, submodules, hidden_dim = cfg.loaded_llm
-
-    # Load dataset
-    if loaded_dataset_sequences is not None:
-        inputs_BP, masks_BP, selected_story_idxs = tokenize_from_sequences(
-            tokenizer=model.tokenizer,
-            sequences=loaded_dataset_sequences
-        )
-    elif cfg.dataset.name.endswith(".json"):
-        inputs_BP, masks_BP, selected_story_idxs = collect_from_local(
-            tokenizer=model.tokenizer,
-            dataset_name=cfg.dataset.name,
-            num_sentences=cfg.num_total_stories,
-            num_tokens=cfg.num_tokens_per_story
-        )
-    else:
-        inputs_BP, masks_BP, selected_story_idxs = collect_from_hf(
-            tokenizer=model.tokenizer, 
-            dataset_name=cfg.dataset.name, 
-            num_stories=cfg.num_total_stories, 
-            num_tokens=cfg.num_tokens_per_story,
-            hf_text_identifier=cfg.dataset.hf_text_identifier
-        )
-
-    # Call batch_act_cache
-    all_acts_LbPD, all_masks_BP = batch_llm_cache(
-        model=model,
-        submodules=submodules,
-        inputs_BP=inputs_BP,
-        masks_BP=masks_BP,
-        hidden_dim=hidden_dim,
-        batch_size=cfg.llm.batch_size,
-        device=DEVICE,
-        debug=cfg.debug,
-    )
-
-    # Save artifacts
-    if cfg.save_artifacts:
-        with open(os.path.join(INTERIM_DIR, f"activations_{cfg.exp_name}.pt"), "wb") as f:
-            th.save(all_acts_LbPD, f, pickle_protocol=5)
-        with open(os.path.join(INTERIM_DIR, f"story_idxs_{cfg.exp_name}.pt"), "wb") as f:
-            th.save(selected_story_idxs, f, pickle_protocol=5)
-        with open(os.path.join(INTERIM_DIR, f"tokens_{cfg.exp_name}.pt"), "wb") as f:
-            th.save(inputs_BP, f, pickle_protocol=5)
-        with open(os.path.join(INTERIM_DIR, f"masks_{cfg.exp_name}.pt"), "wb") as f:
-            th.save(all_masks_BP, f, pickle_protocol=5)
-
-    # # Memory cleanup
-    # del model
-    # th.cuda.empty_cache()
-    # gc.collect()
-
-    return all_acts_LbPD, all_masks_BP, inputs_BP, selected_story_idxs

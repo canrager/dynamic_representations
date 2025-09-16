@@ -11,34 +11,7 @@ import numpy as np
 from src.preprocessing_utils import load_llm_artifacts, run_parameter_sweep
 
 
-def phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
-    """
-    Phase-randomized surrogate per (B, D) series along time P.
-    Preserves power spectrum per dim, randomizes phases -> stationary.
 
-    Args:
-        X_BPD: Tensor of shape (B, P, D)
-
-    Returns:
-        Phase-randomized surrogate with same shape
-    """
-    B, P, D = X_BPD.shape
-    X_sur = th.empty_like(X_BPD)
-    X_np = X_BPD.detach().cpu().numpy()
-
-    for b in range(B):
-        for d in range(D):
-            x = X_np[b, :, d]
-            fft_x = np.fft.rfft(x)
-            mag = np.abs(fft_x)
-            # random phases in [0, 2π), keep DC/Nyquist magnitudes
-            rand_phase = np.exp(1j * np.random.uniform(0.0, 2 * np.pi, size=fft_x.shape))
-            # ensure DC (0-freq) has zero phase
-            rand_phase[0] = 1.0 + 0.0j
-            fft_new = mag * rand_phase
-            x_new = np.fft.irfft(fft_new, n=P)
-            X_sur[b, :, d] = th.from_numpy(x_new).to(X_BPD)
-    return X_sur
 
 def load_cfg_from_dir(dir):
     cfg_path = os.path.join(dir, "config.json")

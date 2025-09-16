@@ -1,69 +1,78 @@
 from dataclasses import dataclass
 from typing import Any
+from itertools import product
 
 from src.dictionary import AutoEncoder, JumpReluAutoEncoder, AutoEncoderTopK, BatchTopKSAE
 
 
 ######## Environment #########
 
+
 @dataclass
 class EnvironmentConfig:
     device: str
     dtype: str
 
-    hfcache_dir: str
+    hf_cache_dir: str
     plots_dir: str
     results_dir: str
     text_inputs_dir: str
     activations_dir: str
 
 
-CAN_ENV_CFG = EnvironmentConfig(
-    device = "cuda",
-    dtype = "float32",
-    hfcache_dir = "/home/can/models",
-    plots_dir = "artifacts/plots",
-    results_dir = "artifacts/results",
-    text_inputs_dir = "artifacts/inputs",
-    activations_dir = "artifacts/activations",
+ENV_CFG = EnvironmentConfig(
+    device="cuda",
+    dtype="bfloat16",
+    hf_cache_dir="/home/can/models",
+    plots_dir="artifacts/plots",
+    results_dir="artifacts/results",
+    text_inputs_dir="artifacts/inputs",
+    activations_dir="artifacts/activations",
 )
 
 
 ######## LLM #########
+
 
 @dataclass
 class LLMConfig:
     name: str
     hf_name: str
     revision: str
+    layer_idx: int
     hidden_dim: int
     batch_size: int
+
 
 LLAMA3_LLM_CFG = LLMConfig(
     name="Llama-3.1-8B",
     hf_name="meta-llama/Llama-3.1-8B",
     revision=None,
+    layer_idx=16,
     hidden_dim=4096,
-    batch_size=500
+    batch_size=100,
 )
 
 GEMMA2_LLM_CFG = LLMConfig(
     name="Gemma-2-2B",
     hf_name="google/gemma-2-2b",
     revision=None,
+    layer_idx=12,
     hidden_dim=2304,
-    batch_size=500
+    batch_size=100,
 )
 
 
 ######## Dataset ########
+
 
 @dataclass
 class DatasetConfig:
     name: str
     hf_name: str
     num_sequences: int
-    context_length: int    
+    context_length: int
+
 
 WEBTEXT_DS_CFG = DatasetConfig(
     name="Webtext",
@@ -89,6 +98,7 @@ CODE_DS_CFG = DatasetConfig(
 
 ######### SAE ##########
 
+
 @dataclass
 class SAEConfig:
     name: str
@@ -97,11 +107,12 @@ class SAEConfig:
     dict_size: int
     batch_size: int
 
+
 DTYPE_STR_TO_CLASS = {
     "batch_top_k": BatchTopKSAE,
     "top_k": AutoEncoderTopK,
     "relu": AutoEncoder,
-    "jump_relu": JumpReluAutoEncoder
+    "jump_relu": JumpReluAutoEncoder,
 }
 
 TOPK_GEMMA2_SAE_CFG = SAEConfig(
@@ -134,7 +145,10 @@ JUMPRELU_GEMMA2_SAE_CFG = SAEConfig(
 )
 
 GEMMA2_SAE_CFGS = [
-    RELU_GEMMA2_SAE_CFG, JUMPRELU_GEMMA2_SAE_CFG, TOPK_GEMMA2_SAE_CFG, BTOPK_GEMMA2_SAE_CFG
+    RELU_GEMMA2_SAE_CFG,
+    JUMPRELU_GEMMA2_SAE_CFG,
+    TOPK_GEMMA2_SAE_CFG,
+    BTOPK_GEMMA2_SAE_CFG,
 ]
 
 TOPK_LLAMA3_SAE_CFG = SAEConfig(
@@ -167,5 +181,35 @@ JUMPRELU_LLAMA3_SAE_CFG = SAEConfig(
 )
 
 LLAMA3_SAE_CFGS = [
-    RELU_LLAMA3_SAE_CFG, JUMPRELU_LLAMA3_SAE_CFG, TOPK_LLAMA3_SAE_CFG, BTOPK_LLAMA3_SAE_CFG
+    RELU_LLAMA3_SAE_CFG,
+    JUMPRELU_LLAMA3_SAE_CFG,
+    TOPK_LLAMA3_SAE_CFG,
+    BTOPK_LLAMA3_SAE_CFG,
 ]
+
+######## Activation Cache Config ########
+
+
+######## Utils ########
+
+
+def get_configs(cfg_class, **kwargs):
+    # Separate list arguments from single arguments
+    list_args = {}
+
+    for key, value in kwargs.items():
+        if isinstance(value, list):
+            list_args[key] = value
+        else:
+            list_args[key] = [value]  # Convert single items to lists
+
+    # Get all combinations
+    keys = list(list_args.keys())
+    values = list(list_args.values())
+
+    configs = []
+    for combination in product(*values):
+        config_kwargs = dict(zip(keys, combination))
+        configs.append(cfg_class(**config_kwargs))
+
+    return configs
