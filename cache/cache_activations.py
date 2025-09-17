@@ -1,5 +1,5 @@
 """
-Script for caching: 
+Script for caching:
 
 1. LLM activations
 2. Stationary surrogate activations
@@ -8,16 +8,40 @@ Script for caching:
 and saving as artifacts for further analysis.
 """
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from src.exp_utils import compute_llm_artifacts
 import os
 import torch as th
+import gc
 import json
 import numpy as np
 from datetime import datetime
 from src.model_utils import load_nnsight_model
 
-from src.configs import *
+from src.configs import (
+    DatasetConfig,
+    LLMConfig,
+    SAEConfig,
+    EnvironmentConfig,
+    LLAMA3_LLM_CFG,
+    LLAMA3_SAE_CFGS,
+    ENV_CFG,
+    WEBTEXT_DS_CFG,
+    SIMPLESTORIES_DS_CFG,
+    CODE_DS_CFG,
+    get_configs,
+    load_llm_activations,
+)
+
+
+@dataclass
+class CacheConfig:
+    data: DatasetConfig
+    llm: LLMConfig
+    sae: (
+        SAEConfig | None
+    )  # If None is passed, Cache the LLM and Surrogate. SAE cache requires existing LLM cache.
+    env: EnvironmentConfig
 
 
 def cache_llm_activations(cfg):
@@ -27,7 +51,7 @@ def cache_llm_activations(cfg):
 
     model, submodule, _ = load_nnsight_model(cfg)
 
-    acts_LBPD, masks_LBPD, tokens_BP, _ = compute_llm_artifacts(cfg, model, submodule)
+    acts_LBPD, masks_LBPD, tokens_BP = compute_llm_artifacts(cfg, model, submodule)
 
     # Move tensors to CPU before saving to free GPU memory
     acts_LBPD = acts_LBPD.cpu()
@@ -46,15 +70,12 @@ def cache_llm_activations(cfg):
 
     print(f"Cached activations to: {folder_dir}")
 
-    # Explicit cleanup to prevent OOM between sweep iterations
     del acts_LBPD, masks_LBPD, tokens_BP, model, submodule
     th.cuda.empty_cache()
-    import gc
-
     gc.collect()
 
 
-def phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
+def compute_phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
     """
     Phase-randomized surrogate per (B, D) series along time P.
     Preserves power spectrum per dim, randomizes phases -> stationary.
@@ -67,7 +88,7 @@ def phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
     """
     B, P, D = X_BPD.shape
     X_sur = th.empty_like(X_BPD)
-    X_np = X_BPD.detach().cpu().numpy()
+    X_np = X_BPD.detach().float().cpu().numpy()
 
     for b in range(B):
         for d in range(D):
@@ -84,26 +105,47 @@ def phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
     return X_sur
 
 
-@dataclass
-class CacheConfig:
-    data: DatasetConfig
-    llm: LLMConfig
-    sae: (
-        SAEConfig | None
-    )  # If None is passed, Cache the LLM and Surrogate. SAE cache requires existing LLM cache.
-    env: EnvironmentConfig
+def cache_surrogate_activations(cfg: CacheConfig):
+    act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
+    surrogate_BPD = compute_phase_randomized_surrogate(act_BPD)
+
+    with open(os.path.join(save_dir, f"surrogate.pt"), "wb") as f:
+        th.save(surrogate_BPD, f, pickle_protocol=5)
+
+    print(f"Cached surrogate to: {save_dir}")
+
+    
 
 
 def main():
     cache_configs = get_configs(
         CacheConfig,
-        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
-        llm=LLAMA3_LLM_CFG,
-        sae=[None] + LLAMA3_SAE_CFGS,
+        data=DatasetConfig(
+            name="Webtext",
+            hf_name="monology/pile-uncopyrighted",
+            num_sequences=10,
+            context_length=500,
+        ),
+        llm=LLMConfig(
+            name="Gemma-2-2B",
+            hf_name="google/gemma-2-2b",
+            revision=None,
+            layer_idx=12,
+            hidden_dim=2304,
+            batch_size=100,
+        ),
+        sae=None,
         env=ENV_CFG,
     )
 
-    cache_llm_activations(cache_configs[0])
+    for cfg in cache_configs:
+        if cfg.sae is None:
+            # Cache LLM activations and compute surrogate
+            cache_llm_activations(cfg)
+            cache_surrogate_activations(cfg)
+        else:
+            pass
+            # cache_sae_activations(cfg)
 
 
 if __name__ == "__main__":
