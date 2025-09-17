@@ -11,6 +11,7 @@ from transformers import (
 from src.project_config import MODELS_DIR, DEVICE
 from src.custom_saes.relu_sae import load_dictionary_learning_relu_sae
 from src.custom_saes.topk_sae import load_dictionary_learning_topk_sae
+from src.configs import SAE_STR_TO_CLASS, DTYPE_STR_TO_CLASS
 
 
 def load_tokenizer(llm_name: str, cache_dir: str):
@@ -114,11 +115,14 @@ def load_hf_model(
 
     return model, tokenizer
 
+
 def load_sae(cfg):
-    sae = cfg.sae.dict_class.from_pretrained(
-        path = cfg.sae.local_filename,
-        device = cfg.device,
-        dtype = cfg.dtype,
+    dict_class = SAE_STR_TO_CLASS[cfg.sae.dict_class]
+    dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
+    sae = dict_class.from_pretrained(
+        path=f"{cfg.sae.local_weights_path}/ae.pt",
+        device=cfg.env.device,
+        dtype=dtype,
     )
     sae.activation_dim = cfg.sae.dict_size
     return sae

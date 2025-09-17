@@ -34,6 +34,8 @@ ENV_CFG = EnvironmentConfig(
     activations_dir="artifacts/activations",
 )
 
+DTYPE_STR_TO_CLASS = {"bfloat16": th.bfloat16, "float32": th.float32}
+
 
 ######## LLM #########
 
@@ -112,7 +114,7 @@ class SAEConfig:
     batch_size: int
 
 
-DTYPE_STR_TO_CLASS = {
+SAE_STR_TO_CLASS = {
     "batch_top_k": BatchTopKSAE,
     "top_k": AutoEncoderTopK,
     "relu": AutoEncoder,
@@ -263,14 +265,16 @@ def check_dataclass_overlap(source, target, path="", verbose=False, compared_att
         if is_dataclass(source_value) and is_dataclass(target_value):
             # Handle nested compared_attributes
             nested_compared_attributes = None
-            if compared_attributes is not None and hasattr(compared_attributes, '__getitem__'):
+            if compared_attributes is not None and hasattr(compared_attributes, "__getitem__"):
                 # If compared_attributes is a dict/dataclass, get nested attributes for this field
                 if hasattr(compared_attributes, attr_name):
                     nested_compared_attributes = getattr(compared_attributes, attr_name)
                 elif isinstance(compared_attributes, dict) and attr_name in compared_attributes:
                     nested_compared_attributes = compared_attributes[attr_name]
 
-            if not check_dataclass_overlap(source_value, target_value, current_path, verbose, nested_compared_attributes):
+            if not check_dataclass_overlap(
+                source_value, target_value, current_path, verbose, nested_compared_attributes
+            ):
                 return False
         else:
             # Check if values are equal
@@ -283,7 +287,10 @@ def check_dataclass_overlap(source, target, path="", verbose=False, compared_att
                 return False
     return True
 
-def check_dataclass_dict_overlap(source, target_dict, path="", verbose=False, compared_attributes=None):
+
+def check_dataclass_dict_overlap(
+    source, target_dict, path="", verbose=False, compared_attributes=None
+):
     """
     Check full overlap between a dataclass object and a dictionary (e.g., from asdict).
 
@@ -327,14 +334,16 @@ def check_dataclass_dict_overlap(source, target_dict, path="", verbose=False, co
         if is_dataclass(source_value) and isinstance(target_value, dict):
             # Handle nested compared_attributes
             nested_compared_attributes = None
-            if compared_attributes is not None and hasattr(compared_attributes, '__getitem__'):
+            if compared_attributes is not None and hasattr(compared_attributes, "__getitem__"):
                 # If compared_attributes is a dict/dataclass, get nested attributes for this field
                 if hasattr(compared_attributes, attr_name):
                     nested_compared_attributes = getattr(compared_attributes, attr_name)
                 elif isinstance(compared_attributes, dict) and attr_name in compared_attributes:
                     nested_compared_attributes = compared_attributes[attr_name]
 
-            if not check_dataclass_dict_overlap(source_value, target_value, current_path, verbose, nested_compared_attributes):
+            if not check_dataclass_dict_overlap(
+                source_value, target_value, current_path, verbose, nested_compared_attributes
+            ):
                 return False
         else:
             # Check if values are equal
@@ -348,7 +357,9 @@ def check_dataclass_dict_overlap(source, target_dict, path="", verbose=False, co
     return True
 
 
-def find_matching_config_folder(source_object, target_folder: str, recency_rank: int = 0, compared_attributes=None) -> str:
+def find_matching_config_folder(
+    source_object, target_folder: str, recency_rank: int = 0, compared_attributes=None
+) -> str:
     """
     Find a config folder that matches the source dataclass object based on recency.
 
@@ -381,7 +392,7 @@ def find_matching_config_folder(source_object, target_folder: str, recency_rank:
         config_file = subfolder / "config.json"
         if config_file.exists():
             try:
-                with open(config_file, 'r') as f:
+                with open(config_file, "r") as f:
                     config_dict = json.load(f)
                 all_configs_dict[subfolder.name] = config_dict
             except (json.JSONDecodeError, IOError):
@@ -394,7 +405,9 @@ def find_matching_config_folder(source_object, target_folder: str, recency_rank:
     # Filter configs that have overlap with source_object
     target_configs = {}
     for folder_name, config_dict in all_configs_dict.items():
-        if check_dataclass_dict_overlap(source_object, config_dict, compared_attributes=compared_attributes):
+        if check_dataclass_dict_overlap(
+            source_object, config_dict, compared_attributes=compared_attributes
+        ):
             target_configs[folder_name] = config_dict
 
     if not target_configs:
@@ -405,33 +418,44 @@ def find_matching_config_folder(source_object, target_folder: str, recency_rank:
     sorted_folders = sorted(target_configs.keys(), reverse=True)
 
     if recency_rank >= len(sorted_folders):
-        raise ValueError(f"recency_rank_order {recency_rank} is out of range. "
-                        f"Only {len(sorted_folders)} matching configs found.")
+        raise ValueError(
+            f"recency_rank_order {recency_rank} is out of range. "
+            f"Only {len(sorted_folders)} matching configs found."
+        )
 
     selected_folder = sorted_folders[recency_rank]
     return str(target_path / selected_folder)
 
 
-def load_matching_artifacts(source_object, target_filenames: List[str], target_folder: str, recency_rank: int = 0, compared_attributes=None) -> Dict[str, th.Tensor]:
-    target_dir = find_matching_config_folder(source_object, target_folder, recency_rank, compared_attributes)
+def load_matching_artifacts(
+    source_object,
+    target_filenames: List[str],
+    target_folder: str,
+    recency_rank: int = 0,
+    compared_attributes=None,
+) -> Dict[str, th.Tensor]:
+    target_dir = find_matching_config_folder(
+        source_object, target_folder, recency_rank, compared_attributes
+    )
     artifacts = {}
 
     for fn in target_filenames:
         path = os.path.join(target_dir, f"{fn}.pt")
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             artifacts[fn] = th.load(f, weights_only=False)
     return artifacts, target_dir
+
 
 def load_llm_activations(cfg, recency_rank=0, return_target_dir=False):
     """Wrapper for load_matching_artifacts specifically for loading llm activations."""
     artifacts, target_dir = load_matching_artifacts(
-        source_object=cfg, 
+        source_object=cfg,
         target_filenames=["activations"],
-        target_folder=cfg.env.activations_dir, 
-        recency_rank=recency_rank, 
-        compared_attributes=["llm", "data"]
+        target_folder=cfg.env.activations_dir,
+        recency_rank=recency_rank,
+        compared_attributes=["llm", "data"],
     )
     if not return_target_dir:
-        return artifacts['activations']
+        return artifacts["activations"]
     else:
-        return artifacts['activations'], target_dir
+        return artifacts["activations"], target_dir

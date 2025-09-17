@@ -9,14 +9,16 @@ and saving as artifacts for further analysis.
 """
 
 from dataclasses import asdict, dataclass
-from src.exp_utils import compute_llm_artifacts
 import os
 import torch as th
 import gc
 import json
 import numpy as np
 from datetime import datetime
-from src.model_utils import load_nnsight_model
+
+from src.model_utils import load_nnsight_model, load_sae
+from src.exp_utils import compute_llm_artifacts
+from src.cache_utils import batch_sae_cache
 
 from src.configs import (
     DatasetConfig,
@@ -25,6 +27,8 @@ from src.configs import (
     EnvironmentConfig,
     LLAMA3_LLM_CFG,
     LLAMA3_SAE_CFGS,
+    GEMMA2_LLM_CFG,
+    GEMMA2_SAE_CFGS,
     ENV_CFG,
     WEBTEXT_DS_CFG,
     SIMPLESTORIES_DS_CFG,
@@ -104,17 +108,40 @@ def compute_phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
             X_sur[b, :, d] = th.from_numpy(x_new).to(X_BPD)
     return X_sur
 
-
 def cache_surrogate_activations(cfg: CacheConfig):
     act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
     surrogate_BPD = compute_phase_randomized_surrogate(act_BPD)
 
-    with open(os.path.join(save_dir, f"surrogate.pt"), "wb") as f:
+    with open(os.path.join(save_dir, "surrogate.pt"), "wb") as f:
         th.save(surrogate_BPD, f, pickle_protocol=5)
 
     print(f"Cached surrogate to: {save_dir}")
 
-    
+def cache_sae_activations(cfg: CacheConfig):
+    llm_act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
+    save_dir = os.path.join(save_dir, cfg.sae.dict_class)
+
+    # Check whether precomputed acts for this sae already exists
+    if os.path.isdir(save_dir):
+        print(f'Cached activations already exist in {save_dir}. Skipping activation cache.')
+        return
+    else:
+        os.makedirs(save_dir)
+
+    sae = load_sae(cfg)
+    sae_recon_BPD, sae_act_BPS, _ = batch_sae_cache(sae, llm_act_BPD, cfg)
+
+    sae_act_BPS = sae_act_BPS.cpu()
+    sae_recon_BPD = sae_recon_BPD.cpu()
+
+    with open(os.path.join(save_dir, "latents.py"), "wb") as f:
+        th.save(sae_act_BPS, f)
+    with open(os.path.join(save_dir, "reconstructions.py"), "wb") as f:
+        th.save(sae_recon_BPD, f)
+
+    del sae, sae_act_BPS, sae_recon_BPD
+    th.cuda.empty_cache()
+    gc.collect()
 
 
 def main():
@@ -134,18 +161,18 @@ def main():
             hidden_dim=2304,
             batch_size=100,
         ),
-        sae=None,
+        sae=GEMMA2_SAE_CFGS,
         env=ENV_CFG,
     )
 
     for cfg in cache_configs:
         if cfg.sae is None:
+            pass
             # Cache LLM activations and compute surrogate
             cache_llm_activations(cfg)
             cache_surrogate_activations(cfg)
         else:
-            pass
-            # cache_sae_activations(cfg)
+            cache_sae_activations(cfg)
 
 
 if __name__ == "__main__":

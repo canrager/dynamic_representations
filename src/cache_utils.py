@@ -304,12 +304,10 @@ def batch_sae_cache_saebench(
     return recons, latent_actss, latent_indicess
 
 
-def batch_sae_cache(sae, act_BPD, sae_cfg):
-    if "eleuther" in sae_cfg.name.lower():
-        forward_output = batch_sae_cache_eleuther(sae, act_BPD, sae_cfg.batch_size, DEVICE)
-    elif any([name in sae_cfg.name.lower() for name in ["saebench", "neurons"]]):
-        forward_output = batch_sae_cache_saebench(sae, act_BPD, sae_cfg.batch_size, DEVICE)
+def batch_sae_cache(sae, act_BPD, cfg):
+    if "eleuther" in cfg.sae.name.lower():
+        forward_output = batch_sae_cache_eleuther(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
     else:
-        raise ValueError("SAE distribution unknown")
+        forward_output = batch_sae_cache_saebench(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
     
     return forward_output

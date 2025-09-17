@@ -32,7 +32,7 @@ class Dictionary(ABC, nn.Module):
 
     @classmethod
     @abstractmethod
-    def from_pretrained(cls, path, device=None, **kwargs) -> "Dictionary":
+    def from_pretrained(cls, path, device=None, dtype=None, **kwargs) -> "Dictionary":
         """
         Load a pretrained dictionary from a file.
         """
@@ -100,7 +100,7 @@ class AutoEncoder(Dictionary, nn.Module):
         self.bias.data *= scale
 
     def normalize_decoder(self):
-        norms = th.norm(self.decoder.weight, dim=0).to(dtype=self.decoder.weighth.dtype, device=self.decoder.weighth.device)
+        norms = th.norm(self.decoder.weight, dim=0).to(dtype=self.decoder.weight.dtype, device=self.decoder.weight.device)
 
         if th.allclose(norms, th.ones_like(norms)):
             return
@@ -109,12 +109,12 @@ class AutoEncoder(Dictionary, nn.Module):
         test_input = th.randn(10, self.activation_dim)
         initial_output = self(test_input)
 
-        self.decoder.weighth.data /= norms
+        self.decoder.weight.data /= norms
 
         new_norms = th.norm(self.decoder.weight, dim=0)
         assert th.allclose(new_norms, th.ones_like(new_norms))
 
-        self.encoder.weighth.data *= norms[:, None]
+        self.encoder.weight.data *= norms[:, None]
         self.encoder.bias.data *= norms
 
         new_output = self(test_input)
@@ -139,6 +139,7 @@ class AutoEncoder(Dictionary, nn.Module):
             autoencoder.normalize_decoder()
 
         if device is not None:
+            print(dtype, device)
             autoencoder.to(dtype=dtype, device=device)
 
         return autoencoder
@@ -156,7 +157,7 @@ class JumpReluAutoEncoder(Dictionary, nn.Module):
         self.W_enc = nn.Parameter(th.empty(activation_dim, dict_size, device=device))
         self.b_enc = nn.Parameter(th.zeros(dict_size, device=device))
         self.W_dec = nn.Parameter(
-            th.nn.inith.kaiming_uniform_(th.empty(dict_size, activation_dim, device=device))
+            th.nn.init.kaiming_uniform_(th.empty(dict_size, activation_dim, device=device))
         )
         self.b_dec = nn.Parameter(th.zeros(activation_dim, device=device))
         self.threshold = nn.Parameter(th.ones(dict_size, device=device) * 0.001)  # Appendix I
@@ -306,12 +307,12 @@ class AutoEncoderTopK(Dictionary, nn.Module):
         self.register_buffer("threshold", th.tensor(-1.0, dtype=th.float32))
 
         self.decoder = nn.Linear(dict_size, activation_dim, bias=False)
-        self.decoder.weighth.data = set_decoder_norm_to_unit_norm(
+        self.decoder.weight.data = set_decoder_norm_to_unit_norm(
             self.decoder.weight, activation_dim, dict_size
         )
 
         self.encoder = nn.Linear(activation_dim, dict_size)
-        self.encoder.weighth.data = self.decoder.weighth.th.clone()
+        self.encoder.weight.data = self.decoder.weight.T.clone()
         self.encoder.bias.data.zero_()
 
         self.b_dec = nn.Parameter(th.zeros(activation_dim))
@@ -358,7 +359,7 @@ class AutoEncoderTopK(Dictionary, nn.Module):
         if self.threshold >= 0:
             self.threshold *= scale
 
-    def from_pretrained(path, k: Optional[int] = None, device=None):
+    def from_pretrained(path, k: Optional[int] = None, device=None, dtype=th.float32):
         """
         Load a pretrained autoencoder from a file.
         """
@@ -373,7 +374,7 @@ class AutoEncoderTopK(Dictionary, nn.Module):
         autoencoder = AutoEncoderTopK(activation_dim, dict_size, k)
         autoencoder.load_state_dict(state_dict)
         if device is not None:
-            autoencoder.to(device)
+            autoencoder.to(device=device, dtype=dtype)
         return autoencoder
 
 
@@ -388,12 +389,12 @@ class BatchTopKSAE(Dictionary, nn.Module):
         self.register_buffer("threshold", th.tensor(-1.0, dtype=th.float32))
 
         self.decoder = nn.Linear(dict_size, activation_dim, bias=False)
-        self.decoder.weighth.data = set_decoder_norm_to_unit_norm(
+        self.decoder.weight.data = set_decoder_norm_to_unit_norm(
             self.decoder.weight, activation_dim, dict_size
         )
 
         self.encoder = nn.Linear(activation_dim, dict_size)
-        self.encoder.weighth.data = self.decoder.weighth.th.clone()
+        self.encoder.weight.data = self.decoder.weight.T.clone()
         self.encoder.bias.data.zero_()
         self.b_dec = nn.Parameter(th.zeros(activation_dim))
 
@@ -437,7 +438,7 @@ class BatchTopKSAE(Dictionary, nn.Module):
             self.threshold *= scale
 
     @classmethod
-    def from_pretrained(cls, path, k=None, device=None, **kwargs) -> "BatchTopKSAE":
+    def from_pretrained(cls, path, k=None, device=None, dtype=None, **kwargs) -> "BatchTopKSAE":
         state_dict = th.load(path)
         dict_size, activation_dim = state_dict["encoder.weight"].shape
         if k is None:
@@ -448,5 +449,5 @@ class BatchTopKSAE(Dictionary, nn.Module):
         autoencoder = cls(activation_dim, dict_size, k)
         autoencoder.load_state_dict(state_dict)
         if device is not None:
-            autoencoder.to(device)
+            autoencoder.to(device=device, dtype=dtype)
         return autoencoder
