@@ -31,7 +31,7 @@ def load_nnsight_model(cfg):
         revision=cfg.llm.revision,
         cache_dir=cfg.env.hf_cache_dir,
         device_map=cfg.env.device,  # Use the defined device
-        dtype=cfg.env.dtype,
+        torch_dtype=cfg.env.dtype,
         dispatch=True,
     )
 
@@ -115,8 +115,7 @@ def load_hf_model(
 
     return model, tokenizer
 
-
-def load_sae(cfg):
+def load_saebench_sae(cfg):
     dict_class = SAE_STR_TO_CLASS[cfg.sae.dict_class]
     dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
     sae = dict_class.from_pretrained(
@@ -126,3 +125,19 @@ def load_sae(cfg):
     )
     sae.activation_dim = cfg.sae.dict_size
     return sae
+
+def load_temporal_sae(cfg):
+    dict_class = SAE_STR_TO_CLASS[cfg.sae.dict_class]
+    dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
+    sae = dict_class.from_pretrained(
+        folder_path=cfg.sae.local_weights_path,
+        device=cfg.env.device,
+        dtype=dtype,
+    )
+    return sae
+
+def load_sae(cfg):
+    if cfg.sae.dict_class == "temporal":
+        return load_temporal_sae(cfg)
+    else:
+        return load_saebench_sae(cfg)

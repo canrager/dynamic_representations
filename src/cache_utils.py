@@ -9,6 +9,7 @@ from torch.nn import Module
 from transformers import BatchEncoding
 from datasets import load_dataset
 import gc
+from collections import defaultdict
 
 from src.model_utils import load_nnsight_model
 from src.project_config import DEVICE, MODELS_DIR, INTERIM_DIR, INPUTS_DIR
@@ -233,7 +234,7 @@ def compute_llm_artifacts(cfg, model, submodule, loaded_dataset_sequences=None):
     return all_acts_LbPD, all_masks_BP, inputs_BP
 
 
-def batch_sae_cache_eleuther(
+def batch_eleuther_sae_cache(
     sae, act_BPD: Tensor, batch_size: int = 100, device: str = "cuda"
 ) -> Tuple[Tensor, Tensor, Tensor]:
     """
@@ -279,7 +280,7 @@ def batch_sae_cache_eleuther(
     return out, latent_acts, latent_indices
 
 
-def batch_sae_cache_saebench(
+def batch_snapshot_sae_cache(
     sae, act_BPD: Tensor, batch_size: int = 100, device: str = "cuda"
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
     """
@@ -303,11 +304,36 @@ def batch_sae_cache_saebench(
 
     return recons, latent_actss, latent_indicess
 
+def batch_temporal_sae_cache(
+    sae, act_BPD: Tensor, cfg
+) -> Tuple[Tensor, Tensor, Tensor]:
+    B, P, D = act_BPD.shape
+    dtype = DTYPE_STR_TO_TORCH[cfg.env.dtype]
+
+    results = defaultdict(list)
+    for i in trange(0, B, cfg.sae.batch_size, desc="SAE forward"):
+        batch = act_BPD[i : i + cfg.sae.batch_size]
+        batch = batch.to(device=cfg.env.device, dtype=dtype)
+        recon_BPD, batch_dict = sae.forward(batch, return_graph=True)
+        results["total_recons"].append(recon_BPD.detach().cpu())
+        results["novel_codes"].append(batch_dict["novel_codes"].detach().cpu())
+        results["novel_recons"].append(batch_dict["novel_recons"].detach().cpu())
+        results["pred_codes"].append(batch_dict["pred_codes"].detach().cpu())
+        results["pred_recons"].append(batch_dict["pred_recons"].detach().cpu())
+        results["attn_graphs"].append(batch_dict["attn_graphs"].detach().cpu())
+
+    for key in results:
+        results[key] = th.cat(results[key], dim=0)
+
+    return results
+
 
 def batch_sae_cache(sae, act_BPD, cfg):
     if "eleuther" in cfg.sae.name.lower():
-        forward_output = batch_sae_cache_eleuther(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
+        forward_output = batch_eleuther_sae_cache(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
+    if "temporal" in cfg.sae.name.lower():
+        forward_output = batch_temporal_sae_cache(sae, act_BPD, cfg)
     else:
-        forward_output = batch_sae_cache_saebench(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
+        forward_output = batch_snapshot_sae_cache(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
     
     return forward_output

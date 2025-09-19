@@ -128,7 +128,7 @@ class AutoEncoder(Dictionary, nn.Module):
         """
         Load a pretrained autoencoder from a file.
         """
-        state_dict = th.load(path)
+        state_dict = th.load(path, weights_only=False)
         dict_size, activation_dim = state_dict["encoder.weight"].shape
         autoencoder = cls(activation_dim, dict_size)
         autoencoder.load_state_dict(state_dict)
@@ -215,7 +215,7 @@ class JumpReluAutoEncoder(Dictionary, nn.Module):
         loading function.
         """
         if not load_from_sae_lens:
-            state_dict = th.load(path)
+            state_dict = th.load(path, weights_only=False)
             activation_dim, dict_size = state_dict["W_enc"].shape
             autoencoder = JumpReluAutoEncoder(activation_dim, dict_size)
             autoencoder.load_state_dict(state_dict)
@@ -363,7 +363,7 @@ class AutoEncoderTopK(Dictionary, nn.Module):
         """
         Load a pretrained autoencoder from a file.
         """
-        state_dict = th.load(path)
+        state_dict = th.load(path, weights_only=False)
         dict_size, activation_dim = state_dict["encoder.weight"].shape
 
         if k is None:
@@ -439,7 +439,7 @@ class BatchTopKSAE(Dictionary, nn.Module):
 
     @classmethod
     def from_pretrained(cls, path, k=None, device=None, dtype=None, **kwargs) -> "BatchTopKSAE":
-        state_dict = th.load(path)
+        state_dict = th.load(path, weights_only=False)
         dict_size, activation_dim = state_dict["encoder.weight"].shape
         if k is None:
             k = state_dict["k"].item()

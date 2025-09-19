@@ -7,6 +7,7 @@ from pathlib import Path
 import torch as th
 
 from src.dictionary import AutoEncoder, JumpReluAutoEncoder, AutoEncoderTopK, BatchTopKSAE
+from sae.saeTemporal import TemporalSAE
 
 
 ######## Environment #########
@@ -96,7 +97,7 @@ SIMPLESTORIES_DS_CFG = DatasetConfig(
 
 CODE_DS_CFG = DatasetConfig(
     name="Code",
-    hf_name="neelnanda/code-10K",
+    hf_name="neelnanda/code-10k",
     num_sequences=1000,
     context_length=500,
 )
@@ -119,34 +120,42 @@ SAE_STR_TO_CLASS = {
     "top_k": AutoEncoderTopK,
     "relu": AutoEncoder,
     "jump_relu": JumpReluAutoEncoder,
+    "temporal": TemporalSAE,
 }
 
 TOPK_GEMMA2_SAE_CFG = SAEConfig(
-    name="Top K",
+    name="top_k",
     local_weights_path="artifacts/trained_saes/gemma2/top_k",
     dict_class="top_k",
     dict_size=4096,
     batch_size=100,
 )
 BTOPK_GEMMA2_SAE_CFG = SAEConfig(
-    name="Batch Top K",
+    name="batch_top_k",
     local_weights_path="artifacts/trained_saes/gemma2/batch_top_k",
     dict_class="batch_top_k",
     dict_size=4096,
     batch_size=100,
 )
 RELU_GEMMA2_SAE_CFG = SAEConfig(
-    name="ReLU",
+    name="relu",
     local_weights_path="artifacts/trained_saes/gemma2/relu",
     dict_class="relu",
     dict_size=4096,
     batch_size=100,
 )
 JUMPRELU_GEMMA2_SAE_CFG = SAEConfig(
-    name="Jump ReLU",
+    name="jump_relu",
     local_weights_path="artifacts/trained_saes/gemma2/jump_relu",
     dict_class="jump_relu",
     dict_size=4096,
+    batch_size=100,
+)
+TEMPORAL_GEMMA2_SAE_CFG = SAEConfig(
+    name="temporal_llxloq3x",
+    local_weights_path="artifacts/trained_saes/temporal_gemma2/llxloq3x",
+    dict_class="temporal",
+    dict_size=8192,
     batch_size=100,
 )
 
@@ -155,6 +164,7 @@ GEMMA2_SAE_CFGS = [
     JUMPRELU_GEMMA2_SAE_CFG,
     TOPK_GEMMA2_SAE_CFG,
     BTOPK_GEMMA2_SAE_CFG,
+    TEMPORAL_GEMMA2_SAE_CFG,
 ]
 
 TOPK_LLAMA3_SAE_CFG = SAEConfig(
@@ -358,7 +368,7 @@ def check_dataclass_dict_overlap(
 
 
 def find_matching_config_folder(
-    source_object, target_folder: str, recency_rank: int = 0, compared_attributes=None
+    source_object, target_folder: str, recency_rank: int = 0, compared_attributes=None, verbose=False
 ) -> str:
     """
     Find a config folder that matches the source dataclass object based on recency.
@@ -406,7 +416,7 @@ def find_matching_config_folder(
     target_configs = {}
     for folder_name, config_dict in all_configs_dict.items():
         if check_dataclass_dict_overlap(
-            source_object, config_dict, compared_attributes=compared_attributes
+            source_object, config_dict, compared_attributes=compared_attributes, verbose=verbose
         ):
             target_configs[folder_name] = config_dict
 
@@ -432,10 +442,11 @@ def load_matching_artifacts(
     target_filenames: List[str],
     target_folder: str,
     recency_rank: int = 0,
-    compared_attributes=None,
+    compared_attributes: List[str] = None,
+    verbose: bool = False
 ) -> Dict[str, th.Tensor]:
     target_dir = find_matching_config_folder(
-        source_object, target_folder, recency_rank, compared_attributes
+        source_object, target_folder, recency_rank, compared_attributes, verbose
     )
     artifacts = {}
 

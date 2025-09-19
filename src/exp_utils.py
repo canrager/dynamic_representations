@@ -587,11 +587,9 @@ def compute_or_load_svd(
 
 
 def load_tokens_of_story(
-    dataset_name: str,
-    dataset_num_stories: int,
+    tokens_BP,
     story_idx: int,
     model_name: str,
-    input_file_str: str,
     omit_BOS_token: bool = False,
     seq_length: Optional[int] = None,
 ) -> List[str]:
@@ -608,10 +606,7 @@ def load_tokens_of_story(
         A list of tokens for the specified story.
     """
     tokenizer = load_tokenizer(model_name, MODELS_DIR)
-    inputs_BP = th.load(
-        os.path.join(INTERIM_DIR, f"tokens_{input_file_str}.pt"), weights_only=False
-    )
-    tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in inputs_BP[story_idx]]
+    tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in tokens_BP[story_idx]]
     tokens = [t.replace("\n", "<newline>") for t in tokens]
 
     if omit_BOS_token:
