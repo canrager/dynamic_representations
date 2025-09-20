@@ -66,7 +66,7 @@ GEMMA2_LLM_CFG = LLMConfig(
     revision=None,
     layer_idx=12,
     hidden_dim=2304,
-    batch_size=100,
+    batch_size=10,
 )
 
 
