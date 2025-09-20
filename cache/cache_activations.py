@@ -134,9 +134,9 @@ def cache_snapshot_sae_activations(cfg: CacheConfig):
     sae_act_BPS = sae_act_BPS.cpu()
     sae_recon_BPD = sae_recon_BPD.cpu()
 
-    with open(os.path.join(save_dir, "latents.py"), "wb") as f:
+    with open(os.path.join(save_dir, "latents.pt"), "wb") as f:
         th.save(sae_act_BPS, f)
-    with open(os.path.join(save_dir, "reconstructions.py"), "wb") as f:
+    with open(os.path.join(save_dir, "reconstructions.pt"), "wb") as f:
         th.save(sae_recon_BPD, f)
 
     del sae, sae_act_BPS, sae_recon_BPD
