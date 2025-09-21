@@ -175,7 +175,7 @@ def main():
 
         print(cfg.env.activations_dir)
 
-        artifacts, _ = load_matching_artifacts(
+        artifacts, _ = load_matching_activations(
             cfg, keys, cfg.env.activations_dir, compared_attributes=["llm", "data"]
         )
         for key in artifacts:

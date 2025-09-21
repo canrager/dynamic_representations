@@ -38,6 +38,7 @@ def plot_attn_graphs(graphs_AHLL, tokens, cfg):
 
     if cfg.use_log_scale:
         from matplotlib.colors import LogNorm
+
         # Set up log scale parameters
         log_vmin = 1e-6  # Avoid log(0)
         norm = LogNorm(vmin=log_vmin, vmax=vmax)
@@ -58,19 +59,10 @@ def plot_attn_graphs(graphs_AHLL, tokens, cfg):
                 graph_data = graph_LL
 
             if cfg.use_log_scale:
-                im = ax.imshow(
-                    graph_data.numpy(),
-                    cmap=cfg.cmap,
-                    norm=norm,
-                    aspect="auto"
-                )
+                im = ax.imshow(graph_data.numpy(), cmap=cfg.cmap, norm=norm, aspect="auto")
             else:
                 im = ax.imshow(
-                    graph_data.numpy(),
-                    cmap=cfg.cmap,
-                    vmin=vmin,
-                    vmax=vmax,
-                    aspect="auto"
+                    graph_data.numpy(), cmap=cfg.cmap, vmin=vmin, vmax=vmax, aspect="auto"
                 )
 
             # Set tick labels
@@ -105,7 +97,7 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
     num_stories = len(cfg.story_indices)
     # Get number of layers from the first story
     num_layers = graphs_BAHLL.shape[1]
-    summed_figsize = (5 * num_stories+5, 5 * num_layers)
+    summed_figsize = (5 * num_stories + 5, 5 * num_layers)
     fig, axes = plt.subplots(num_layers, num_stories, figsize=summed_figsize, squeeze=False)
 
     # Find global vmax across all stories and layers for consistent scaling
@@ -123,7 +115,9 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
         ]
 
         # Sum across heads only (keep layers separate)
-        graphs_ALL = th.sum(graphs_AHLL, dim=1)  # Sum across heads, shape: (num_layers, seq_len, seq_len)
+        graphs_ALL = th.sum(
+            graphs_AHLL, dim=1
+        )  # Sum across heads, shape: (num_layers, seq_len, seq_len)
         graphs_ALL = graphs_ALL.to(dtype=th.float32, device="cpu")
         story_layer_data.append(graphs_ALL)
 
@@ -132,6 +126,7 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
 
     if cfg.use_log_scale:
         from matplotlib.colors import LogNorm
+
         log_vmin = 1e-6
         norm = LogNorm(vmin=log_vmin, vmax=all_vmax)
     else:
@@ -160,19 +155,10 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
                 graph_data = graph_LL
 
             if cfg.use_log_scale:
-                im = ax.imshow(
-                    graph_data.numpy(),
-                    cmap=cfg.cmap,
-                    norm=norm,
-                    aspect="auto"
-                )
+                im = ax.imshow(graph_data.numpy(), cmap=cfg.cmap, norm=norm, aspect="auto")
             else:
                 im = ax.imshow(
-                    graph_data.numpy(),
-                    cmap=cfg.cmap,
-                    vmin=vmin,
-                    vmax=all_vmax,
-                    aspect="auto"
+                    graph_data.numpy(), cmap=cfg.cmap, vmin=vmin, vmax=all_vmax, aspect="auto"
                 )
 
             # Set tick labels
@@ -202,8 +188,8 @@ def main():
     cfg = PlotConfig(
         figsize=(50, 10),
         cmap="viridis",
-        selected_sequence_idx=0, # for the per-head plot
-        story_indices=[0, 1, 2, 3, 4], # for the sum across heads plot
+        selected_sequence_idx=0,  # for the per-head plot
+        story_indices=[0, 1, 2, 3, 4],  # for the sum across heads plot
         seq_start_idx=0,
         seq_end_idx=100,
         omit_bos_token=False,
@@ -216,7 +202,7 @@ def main():
     )
     cfg.data.num_sequences = 10
 
-    art, _ = load_matching_artifacts(
+    art, _ = load_matching_activations(
         cfg,
         [
             "tokens",

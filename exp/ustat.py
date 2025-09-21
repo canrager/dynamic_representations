@@ -18,7 +18,9 @@ class IDConfig:
     min_p: int
     max_p: int  # selected_context_length, inclusive
     num_p: int
+    num_sequences: int
     do_log_spacing: bool
+    act_path: str
 
     env: EnvironmentConfig
     data: DatasetConfig
@@ -75,7 +77,7 @@ def single_pca_experiment(cfg: IDConfig, acts_BPD: th.Tensor):
         # Linear steps from smallest we to largest we, first and las indices of wes should be those
         ps = th.linspace(cfg.min_p, cfg.max_p, cfg.num_windows, dtype=th.int)
 
-    acts_BpD = acts_BPD[:, ps, :]
+    acts_BpD = acts_BPD[: cfg.num_sequences, ps, :]
 
     ustat_p = compute_u_statistic(acts_BpD, cfg)
     rank_p = compute_rank(acts_BpD, cfg)
@@ -100,46 +102,47 @@ def single_pca_experiment(cfg: IDConfig, acts_BPD: th.Tensor):
 
 
 def main():
-    configs = get_configs(
+    configs = get_gemma_act_configs(
         cfg_class=IDConfig,
+        act_paths=(
+            (
+                [None], 
+                [
+                    "activations", 
+                    # "surrogate"
+                ]
+            ),
+        ),
         reconstruction_threshold=0.9,
         min_p=20,
         max_p=499,  # 0-indexed
         num_p=7,
         do_log_spacing=True,
+        num_sequences=[10, 100, 1000, 10000],
         # Artifacts
         env=ENV_CFG,
-        data=WEBTEXT_DS_CFG,
+        data=DatasetConfig(
+            name="Webtext",
+            hf_name="monology/pile-uncopyrighted",
+            num_sequences=10000,
+            context_length=500,
+        ),
         llm=GEMMA2_LLM_CFG,
-        sae=[None] + GEMMA2_SAE_CFGS,
+        sae=None,  # set by act_paths
+        act_path=None,  # set by act_paths
     )
 
     for cfg in configs:
-
-        if cfg.sae is None:
-            # Run on LLM activations
-            keys = ["activations", "surrogate"]
-        elif "temporal" in cfg.sae.name.lower():
-            # Run on codes and reconstruction
-            keys = [
-                f"{cfg.sae.name}/novel_codes",
-                f"{cfg.sae.name}/novel_recons",
-                f"{cfg.sae.name}/pred_codes",
-                f"{cfg.sae.name}/pred_recons",
-                f"{cfg.sae.name}/total_recons",
-            ]
-        else:
-            keys = [f"{cfg.sae.name}/latents", f"{cfg.sae.name}/reconstructions"]
-
-        artifacts, _ = load_matching_artifacts(
-            cfg, keys, cfg.env.activations_dir, compared_attributes=["llm", "data"]
+        artifacts, _ = load_matching_activations(
+            cfg,
+            [cfg.act_path],
+            cfg.env.activations_dir,
+            compared_attributes=["llm", "data"],
+            verbose=False,
         )
-        for key in artifacts:
-            acts_BPD = artifacts[key]
-            key_config = deepcopy(cfg)
-            key_config.act_path = key
-            single_pca_experiment(cfg, acts_BPD)
-            time.sleep(1)
+        acts_BPD = artifacts[cfg.act_path]
+        single_pca_experiment(cfg, acts_BPD)
+        time.sleep(1)
 
 
 if __name__ == "__main__":

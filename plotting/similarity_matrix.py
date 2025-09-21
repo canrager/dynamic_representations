@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from src.configs import *
 from src.exp_utils import load_tokens_of_story
 
+
 @dataclass
 class PlotConfig:
     figsize: tuple
@@ -23,10 +24,12 @@ class PlotConfig:
     llm: LLMConfig
     sae: SAEConfig
 
+
 def pairwise_cosine_similarity(x_LD):
-    eps=1e-8
+    eps = 1e-8
     x_norm_LD = x_LD / (th.norm(x_LD, dim=-1, keepdim=True) + eps)
     return th.matmul(x_norm_LD, x_norm_LD.T)
+
 
 def plot_similarity_comparison(sims, tokens, cfg):
     # Create subplot layout
@@ -34,12 +37,12 @@ def plot_similarity_comparison(sims, tokens, cfg):
 
     # Define plot order and titles
     plot_keys = [
-        ('activations', 'LLM Activations'),
-        (f'{cfg.sae.name}/pred_codes', 'Predicted Codes'),
-        (f'{cfg.sae.name}/novel_codes', 'Novel Codes'),
-        (f'{cfg.sae.name}/total_recons', 'Total Reconstructions'),
-        (f'{cfg.sae.name}/pred_recons', 'Predicted Reconstructions'),
-        (f'{cfg.sae.name}/novel_recons', 'Novel Reconstructions')
+        ("activations", "LLM Activations"),
+        (f"{cfg.sae.name}/pred_codes", "Predicted Codes"),
+        (f"{cfg.sae.name}/novel_codes", "Novel Codes"),
+        (f"{cfg.sae.name}/total_recons", "Total Reconstructions"),
+        (f"{cfg.sae.name}/pred_recons", "Predicted Reconstructions"),
+        (f"{cfg.sae.name}/novel_recons", "Novel Reconstructions"),
     ]
 
     # Create subplots
@@ -53,13 +56,13 @@ def plot_similarity_comparison(sims, tokens, cfg):
         # Set tick labels to tokens
         ax.set_xticks(range(len(tokens)))
         ax.set_yticks(range(len(tokens)))
-        ax.set_xticklabels(tokens, rotation=45, ha='right', fontsize=8)
+        ax.set_xticklabels(tokens, rotation=45, ha="right", fontsize=8)
         ax.set_yticklabels(tokens, fontsize=8)
 
         if row == 1:  # Bottom row
-            ax.set_xlabel('Tokens')
+            ax.set_xlabel("Tokens")
         if col == 0:  # Left column
-            ax.set_ylabel('Tokens')
+            ax.set_ylabel("Tokens")
 
         # Add individual colorbar for each subplot
         fig.colorbar(im, ax=ax, shrink=0.8)
@@ -74,10 +77,11 @@ def plot_similarity_comparison(sims, tokens, cfg):
     print(f"saved figure to: {plot_path}")
     plt.close()
 
+
 def main():
     cfg = PlotConfig(
         figsize=(18, 12),
-        cmap='magma',
+        cmap="magma",
         selected_sequence_idx=0,
         seq_start_idx=3,
         seq_end_idx=25,
@@ -86,12 +90,11 @@ def main():
         env=ENV_CFG,
         data=SIMPLESTORIES_DS_CFG,
         llm=GEMMA2_LLM_CFG,
-        sae=TEMPORAL_GEMMA2_SAE_CFG
+        sae=TEMPORAL_GEMMA2_SAE_CFG,
     )
     cfg.data.num_sequences = 10
 
-
-    art, _ = load_matching_artifacts(
+    art, _ = load_matching_activations(
         cfg,
         [
             "tokens",
@@ -104,7 +107,7 @@ def main():
         ],
         target_folder=cfg.env.activations_dir,
         compared_attributes=["llm", "data"],
-        verbose=False
+        verbose=False,
     )
 
     # Detokenize dataset tokens
@@ -113,10 +116,10 @@ def main():
         story_idx=cfg.selected_sequence_idx,
         model_name=cfg.llm.hf_name,
         omit_BOS_token=cfg.omit_bos_token,
-        seq_length=cfg.seq_end_idx
+        seq_length=cfg.seq_end_idx,
     )
     # Truncate tokens to selected range
-    tokens = tokens[cfg.seq_start_idx:cfg.seq_end_idx]
+    tokens = tokens[cfg.seq_start_idx : cfg.seq_end_idx]
 
     # compute similarities
     sims = {}
@@ -124,9 +127,9 @@ def main():
         if key == "tokens":
             continue
         selected_LD = art[key][cfg.selected_sequence_idx]
-        if cfg.omit_bos_token: 
+        if cfg.omit_bos_token:
             selected_LD = selected_LD[1:]
-        selected_LD = selected_LD[cfg.seq_start_idx:cfg.seq_end_idx]
+        selected_LD = selected_LD[cfg.seq_start_idx : cfg.seq_end_idx]
         sims[key] = pairwise_cosine_similarity(selected_LD).float()
 
     # Create and save plot

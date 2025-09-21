@@ -183,7 +183,7 @@ def main():
             hf_name="monology/pile-uncopyrighted",
             # hf_name="neelnanda/code-10k",
             # hf_name="SimpleStories/SimpleStories",
-            num_sequences=1000,
+            num_sequences=10000,
             context_length=500,
         ),
         llm=LLMConfig(
@@ -192,9 +192,9 @@ def main():
             revision=None,
             layer_idx=12,
             hidden_dim=2304,
-            batch_size=10,
+            batch_size=50,
         ),
-        sae=[None] + GEMMA2_SAE_CFGS,
+        sae=[None], # + GEMMA2_SAE_CFGS,
         env=ENV_CFG,
     )
 
@@ -202,7 +202,7 @@ def main():
         if cfg.sae is None:
             # Cache LLM activations and compute surrogate
             cache_llm_activations(cfg)
-            cache_surrogate_activations(cfg)
+            # cache_surrogate_activations(cfg)
         else:
             # Cache SAE activations and reconstructions
             cache_sae_activations(cfg)

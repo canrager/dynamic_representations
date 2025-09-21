@@ -29,21 +29,26 @@ class AutocorrelationConfig:
 
 def compute_autocorrelation_heatmap(cfg: AutocorrelationConfig, act_BPD: th.Tensor):
     act_BPD = act_BPD / act_BPD.norm(dim=-1, keepdim=True)
-    anchors_W = th.linspace(cfg.min_anchor, cfg.max_anchor, cfg.num_anchors, dtype=th.int) # 1-indexed
-    anchor_act_WBD = act_BPD[:, anchors_W-1, :].transpose(0, 1)
+    anchors_W = th.linspace(
+        cfg.min_anchor, cfg.max_anchor, cfg.num_anchors, dtype=th.int
+    )  # 1-indexed
+    anchor_act_WBD = act_BPD[:, anchors_W - 1, :].transpose(0, 1)
 
     B, P, D = act_BPD.shape
     window_size = cfg.max_offset - cfg.min_offset + 1
 
     relative_offsets_p = th.linspace(-cfg.max_offset, -cfg.min_offset, window_size, dtype=th.int)
-    window_relative_pos_indices_WBp = th.ones(cfg.num_anchors, B, window_size, dtype=th.int) * relative_offsets_p[None, None, :]
+    window_relative_pos_indices_WBp = (
+        th.ones(cfg.num_anchors, B, window_size, dtype=th.int) * relative_offsets_p[None, None, :]
+    )
     window_pos_indices_WBp = window_relative_pos_indices_WBp + anchors_W[:, None, None]
-    window_batch_indices_WBp = th.ones_like(window_pos_indices_WBp) * th.arange(B, dtype=th.int)[None, :, None]
+    window_batch_indices_WBp = (
+        th.ones_like(window_pos_indices_WBp) * th.arange(B, dtype=th.int)[None, :, None]
+    )
     window_act_WBpD = act_BPD[window_batch_indices_WBp, window_pos_indices_WBp, :]
 
     autocorr_WBp = einops.einsum(anchor_act_WBD, window_act_WBpD, "W B D, W B p D -> W B p")
     autocorr_Wp = autocorr_WBp.mean(dim=1)
-
 
     return autocorr_Wp, anchors_W, relative_offsets_p
 
@@ -103,7 +108,7 @@ def main():
         else:
             keys = [f"{cfg.sae.name}/latents", f"{cfg.sae.name}/reconstructions"]
 
-        artifacts, _ = load_matching_artifacts(
+        artifacts, _ = load_matching_activations(
             cfg, keys, cfg.env.activations_dir, compared_attributes=["llm", "data"]
         )
         for key in artifacts:
