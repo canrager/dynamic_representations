@@ -20,22 +20,7 @@ from src.model_utils import load_nnsight_model, load_sae
 from src.exp_utils import compute_llm_artifacts
 from src.cache_utils import batch_sae_cache
 
-from src.configs import (
-    DatasetConfig,
-    LLMConfig,
-    SAEConfig,
-    EnvironmentConfig,
-    LLAMA3_LLM_CFG,
-    LLAMA3_SAE_CFGS,
-    GEMMA2_LLM_CFG,
-    GEMMA2_SAE_CFGS,
-    ENV_CFG,
-    WEBTEXT_DS_CFG,
-    SIMPLESTORIES_DS_CFG,
-    CODE_DS_CFG,
-    get_configs,
-    load_llm_activations,
-)
+from src.configs import *
 
 
 @dataclass
@@ -117,7 +102,7 @@ def cache_surrogate_activations(cfg: CacheConfig):
 
     print(f"Cached surrogate to: {save_dir}")
 
-def cache_snapshot_sae_activations(cfg: CacheConfig):
+def cache_dictionarylearning_sae_activations(cfg: CacheConfig):
     llm_act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
     save_dir = os.path.join(save_dir, cfg.sae.name)
 
@@ -144,16 +129,10 @@ def cache_snapshot_sae_activations(cfg: CacheConfig):
     gc.collect()
 
 
-def cache_temporal_sae_activations(cfg: CacheConfig):
+def cache_selftrain_sae_activations(cfg: CacheConfig):
     llm_act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
     save_dir = os.path.join(save_dir, cfg.sae.name)
 
-    # Check whether precomputed acts for this sae already exist
-    # if os.path.isdir(save_dir):
-    #     print(f'Cached activations already exist in {save_dir}. Skipping activation cache.')
-    #     return
-    # else:
-    #     os.makedirs(save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
     sae = load_sae(cfg)
@@ -168,24 +147,25 @@ def cache_temporal_sae_activations(cfg: CacheConfig):
     gc.collect()
 
 def cache_sae_activations(cfg: CacheConfig):
-    if "temporal" in cfg.sae.name.lower():
-        cache_temporal_sae_activations(cfg)
+    if "selftrain" in cfg.sae.local_weights_path:
+        cache_selftrain_sae_activations(cfg)
     else:
-        cache_snapshot_sae_activations(cfg)
+        cache_dictionarylearning_sae_activations(cfg)
 
 def main():
     cache_configs = get_configs(
         CacheConfig,
-        data=DatasetConfig(
-            # name="SimpleStories",
-            # name="Code",
-            name="Webtext",
-            hf_name="monology/pile-uncopyrighted",
-            # hf_name="neelnanda/code-10k",
-            # hf_name="SimpleStories/SimpleStories",
-            num_sequences=10000,
-            context_length=500,
-        ),
+        # data=DatasetConfig(
+        #     # name="SimpleStories",
+        #     # name="Code",
+        #     name="Webtext",
+        #     hf_name="monology/pile-uncopyrighted",
+        #     # hf_name="neelnanda/code-10k",
+        #     # hf_name="SimpleStories/SimpleStories",
+        #     num_sequences=1000,
+        #     context_length=500,
+        # ),
+        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
         llm=LLMConfig(
             name="Gemma-2-2B",
             hf_name="google/gemma-2-2b",
@@ -194,7 +174,7 @@ def main():
             hidden_dim=2304,
             batch_size=50,
         ),
-        sae=[None], # + GEMMA2_SAE_CFGS,
+        sae=[None] + GEMMA2_SELFTRAIN_SAE_CFGS,
         env=ENV_CFG,
     )
 
@@ -202,7 +182,7 @@ def main():
         if cfg.sae is None:
             # Cache LLM activations and compute surrogate
             cache_llm_activations(cfg)
-            # cache_surrogate_activations(cfg)
+            cache_surrogate_activations(cfg)
         else:
             # Cache SAE activations and reconstructions
             cache_sae_activations(cfg)

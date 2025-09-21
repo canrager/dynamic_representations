@@ -280,7 +280,7 @@ def batch_eleuther_sae_cache(
     return out, latent_acts, latent_indices
 
 
-def batch_snapshot_sae_cache(
+def batch_dictionarylearning_sae_cache(
     sae, act_BPD: Tensor, batch_size: int = 100, device: str = "cuda"
 ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
     """
@@ -328,12 +328,40 @@ def batch_temporal_sae_cache(
     return results
 
 
+def batch_standard_sae_cache(
+    sae, act_BPD: Tensor, cfg
+) -> Tuple[Tensor, Tensor, Tensor]:
+    B, P, D = act_BPD.shape
+    dtype = DTYPE_STR_TO_TORCH[cfg.env.dtype]
+
+    results = defaultdict(list)
+    for i in trange(0, B, cfg.sae.batch_size, desc="SAE forward"):
+        batch = act_BPD[i : i + cfg.sae.batch_size]
+        batch = batch.to(device=cfg.env.device, dtype=dtype)
+        b = batch.shape[0]
+        batch_ND = batch.view(b * P, D)
+
+        recons_ND, codes_ND, _ = sae.forward(batch_ND, return_hidden=True)
+        recons_BPD = recons_ND.view(b, P, D)
+        codes_BPD = codes_ND.view(b, P, cfg.sae.dict_size)
+
+        results["codes"].append(codes_BPD.detach().cpu())
+        results["recons"].append(recons_BPD.detach().cpu())
+
+    for key in results:
+        results[key] = th.cat(results[key], dim=0)
+
+    return results
+
+
 def batch_sae_cache(sae, act_BPD, cfg):
     if "eleuther" in cfg.sae.name.lower():
         forward_output = batch_eleuther_sae_cache(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
-    if "temporal" in cfg.sae.name.lower():
+    elif "temporal" in cfg.sae.name.lower():
         forward_output = batch_temporal_sae_cache(sae, act_BPD, cfg)
+    elif (not "temporal" in cfg.sae.name.lower()) and ("selftrain" in cfg.sae.local_weights_path.lower()):
+        forward_output = batch_standard_sae_cache(sae, act_BPD, cfg)
     else:
-        forward_output = batch_snapshot_sae_cache(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
+        forward_output = batch_dictionarylearning_sae_cache(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
     
     return forward_output

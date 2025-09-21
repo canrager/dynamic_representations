@@ -8,6 +8,7 @@ import torch as th
 
 from src.dictionary import AutoEncoder, JumpReluAutoEncoder, AutoEncoderTopK, BatchTopKSAE
 from sae.saeTemporal import TemporalSAE
+from sae.saeStandard import SAEStandard
 
 
 ######## Environment #########
@@ -121,36 +122,38 @@ SAE_STR_TO_CLASS = {
     "relu": AutoEncoder,
     "jump_relu": JumpReluAutoEncoder,
     "temporal": TemporalSAE,
+    "standard": SAEStandard
 }
 
-TOPK_GEMMA2_SAE_CFG = SAEConfig(
+TOPK_DL_GEMMA2_SAE_CFG = SAEConfig(
     name="top_k",
     local_weights_path="artifacts/trained_saes/gemma2/top_k",
     dict_class="top_k",
     dict_size=4096,
     batch_size=100,
 )
-BTOPK_GEMMA2_SAE_CFG = SAEConfig(
+BTOPK_DL_GEMMA2_SAE_CFG = SAEConfig(
     name="batch_top_k",
     local_weights_path="artifacts/trained_saes/gemma2/batch_top_k",
     dict_class="batch_top_k",
     dict_size=4096,
     batch_size=100,
 )
-RELU_GEMMA2_SAE_CFG = SAEConfig(
+RELU_DL_GEMMA2_SAE_CFG = SAEConfig(
     name="relu",
     local_weights_path="artifacts/trained_saes/gemma2/relu",
     dict_class="relu",
     dict_size=4096,
     batch_size=100,
 )
-JUMPRELU_GEMMA2_SAE_CFG = SAEConfig(
+JUMPRELU_DL_GEMMA2_SAE_CFG = SAEConfig(
     name="jump_relu",
     local_weights_path="artifacts/trained_saes/gemma2/jump_relu",
     dict_class="jump_relu",
     dict_size=4096,
     batch_size=100,
 )
+
 TEMPORAL_GEMMA2_SAE_CFG = SAEConfig(
     name="temporal_llxloq3x",
     local_weights_path="artifacts/trained_saes/temporal_gemma2/llxloq3x",
@@ -159,19 +162,189 @@ TEMPORAL_GEMMA2_SAE_CFG = SAEConfig(
     batch_size=100,
 )
 
-GEMMA2_SAE_CFGS = [
-    RELU_GEMMA2_SAE_CFG,
-    JUMPRELU_GEMMA2_SAE_CFG,
-    TOPK_GEMMA2_SAE_CFG,
-    BTOPK_GEMMA2_SAE_CFG,
-    TEMPORAL_GEMMA2_SAE_CFG,
+GEMMA2_DL_SAE_CFGS = [
+    RELU_DL_GEMMA2_SAE_CFG,
+    JUMPRELU_DL_GEMMA2_SAE_CFG,
+    TOPK_DL_GEMMA2_SAE_CFG,
+    BTOPK_DL_GEMMA2_SAE_CFG,
 ]
-GEMMA2_SNAPSHOT_SAE_CFGS = [
-    RELU_GEMMA2_SAE_CFG,
-    JUMPRELU_GEMMA2_SAE_CFG,
-    TOPK_GEMMA2_SAE_CFG,
-    BTOPK_GEMMA2_SAE_CFG,
+
+
+# Selftrain SAE configs
+RELU_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="relu",
+    local_weights_path="artifacts/trained_saes/selftrain/relu",
+    dict_class="standard",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+RELU_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="relu_2x_denser",
+    local_weights_path="artifacts/trained_saes/selftrain/relu_2x_denser",
+    dict_class="standard",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+RELU_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="relu_2x_wider",
+    local_weights_path="artifacts/trained_saes/selftrain/relu_2x_wider",
+    dict_class="standard",
+    dict_size=18432,  # 2304 * 8 (exp_factor)
+    batch_size=100,
+)
+
+TOPK_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="topk",
+    local_weights_path="artifacts/trained_saes/selftrain/topk",
+    dict_class="standard",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TOPK_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="topk_2x_denser",
+    local_weights_path="artifacts/trained_saes/selftrain/topk_2x_denser",
+    dict_class="standard",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TOPK_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="topk_2x_wider",
+    local_weights_path="artifacts/trained_saes/selftrain/topk_2x_wider",
+    dict_class="standard",
+    dict_size=18432,  # 2304 * 8 (exp_factor)
+    batch_size=100,
+)
+
+BATCHTOPK_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="batchtopk",
+    local_weights_path="artifacts/trained_saes/selftrain/batchtopk",
+    dict_class="standard",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+BATCHTOPK_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="batchtopk_2x_denser",
+    local_weights_path="artifacts/trained_saes/selftrain/batchtopk_2x_denser",
+    dict_class="standard",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+BATCHTOPK_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="batchtopk_2x_wider",
+    local_weights_path="artifacts/trained_saes/selftrain/batchtopk_2x_wider",
+    dict_class="standard",
+    dict_size=18432,  # 2304 * 8 (exp_factor)
+    batch_size=100,
+)
+
+MP_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="mp",
+    local_weights_path="artifacts/trained_saes/selftrain/mp",
+    dict_class="standard",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_2x_denser",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_2x_denser",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_2x_wider",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_2x_wider",
+    dict_class="temporal",
+    dict_size=18432,  # 2304 * 8 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_2X_LAYERS_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_2x_layers",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_2x_layers",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_4x_heads",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_4x_heads",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_RANK_1_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_rank_1",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_rank_1",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_RANK_2_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_rank_2",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_rank_2",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_RANK_1_LAYERS_2_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_rank_1_layers_2",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_rank_1_layers_2",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+TEMPORAL_PRED_ONLY_SELFTRAIN_SAE_CFG = SAEConfig(
+    name="temporal_pred_only",
+    local_weights_path="artifacts/trained_saes/selftrain/temporal_pred_only",
+    dict_class="temporal",
+    dict_size=9216,  # 2304 * 4 (exp_factor)
+    batch_size=100,
+)
+
+GEMMA2_SELFTRAIN_SAE_CFGS = [
+    RELU_SELFTRAIN_SAE_CFG,
+    RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
+    RELU_2X_WIDER_SELFTRAIN_SAE_CFG,
+    TOPK_SELFTRAIN_SAE_CFG,
+    TOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
+    TOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
+    BATCHTOPK_SELFTRAIN_SAE_CFG,
+    BATCHTOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
+    BATCHTOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
+    MP_SELFTRAIN_SAE_CFG,
+    TEMPORAL_SELFTRAIN_SAE_CFG,
+    TEMPORAL_2X_DENSER_SELFTRAIN_SAE_CFG,
+    TEMPORAL_2X_WIDER_SELFTRAIN_SAE_CFG,
+    TEMPORAL_2X_LAYERS_SELFTRAIN_SAE_CFG,
+    TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG,
+    TEMPORAL_RANK_1_SELFTRAIN_SAE_CFG,
+    TEMPORAL_RANK_2_SELFTRAIN_SAE_CFG,
+    TEMPORAL_RANK_1_LAYERS_2_SELFTRAIN_SAE_CFG,
+    TEMPORAL_PRED_ONLY_SELFTRAIN_SAE_CFG,
 ]
+
 
 TOPK_LLAMA3_SAE_CFG = SAEConfig(
     name="Top K",
@@ -487,10 +660,10 @@ def load_matching_activations(
     artifacts = {}
 
     for filetype in target_filenames:
-        if source_object.sae is not None:
-            fn = f"{source_object.sae.name}/{filetype}"
-        else:
-            fn = filetype
+        # if source_object.sae is not None:
+        #     fn = f"{source_object.sae.name}/{filetype}"
+        # else:
+        fn = filetype
         path = os.path.join(target_dir, f"{fn}.pt")
         with open(path, "rb") as f:
             artifacts[filetype] = th.load(f, weights_only=False)
