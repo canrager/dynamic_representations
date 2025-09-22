@@ -346,9 +346,9 @@ GEMMA2_SELFTRAIN_SAE_CFGS = [
 ]
 
 GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS = [
-    # RELU_SELFTRAIN_SAE_CFG,
-    # RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
-    # RELU_2X_WIDER_SELFTRAIN_SAE_CFG,
+    RELU_SELFTRAIN_SAE_CFG,
+    RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
+    RELU_2X_WIDER_SELFTRAIN_SAE_CFG,
     TOPK_SELFTRAIN_SAE_CFG,
     TOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
     TOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
@@ -685,10 +685,10 @@ def load_matching_activations(
     artifacts = {}
 
     for filetype in target_filenames:
-        # if source_object.sae is not None:
-        #     fn = f"{source_object.sae.name}/{filetype}"
-        # else:
-        fn = filetype
+        if source_object.sae is None or filetype == "activations":
+            fn = filetype
+        else:
+            fn = f"{source_object.sae.name}/{filetype}"
         path = os.path.join(target_dir, f"{fn}.pt")
         with open(path, "rb") as f:
             artifacts[filetype] = th.load(f, weights_only=False)

@@ -53,7 +53,7 @@ def compute_autocorrelation_heatmap(cfg: AutocorrelationConfig, act_BPD: th.Tens
     return autocorr_Wp, anchors_W, relative_offsets_p
 
 
-def single_pca_experiment(cfg: AutocorrelationConfig, acts_BPD: th.Tensor):
+def single_autocorrelation_experiment(cfg: AutocorrelationConfig, acts_BPD: th.Tensor):
     autocorr_Wp, anchors_W, relative_offsets_p = compute_autocorrelation_heatmap(cfg, acts_BPD)
     results = dict(
         autocorr_Wp=autocorr_Wp.cpu().tolist(),
@@ -76,47 +76,60 @@ def single_pca_experiment(cfg: AutocorrelationConfig, acts_BPD: th.Tensor):
 
 
 def main():
-    configs = get_configs(
+    configs = get_gemma_act_configs(
         cfg_class=AutocorrelationConfig,
+        act_paths=(
+            (
+                [None], 
+                [
+                    # "activations", 
+                    # "surrogate"
+                ]
+            ),
+            (
+                [BATCHTOPK_SELFTRAIN_SAE_CFG],
+                [
+                    # "codes",
+                    # "recons"
+                    "residuals"
+                ]
+            ),
+            (
+                [TEMPORAL_SELFTRAIN_SAE_CFG],
+                [
+                    # "novel_codes",
+                    # "novel_recons",
+                    # "pred_codes",
+                    # "pred_recons",
+                    # "total_recons",
+                    "residuals"
+                ]
+            ),
+        ),
         min_anchor=50,
         max_anchor=500,  # selected_context_length, inclusive
         num_anchors=10,
         min_offset=10,  # absolute value
         max_offset=30,  # absolute value
-        act_path=None,
         # Artifacts
         env=ENV_CFG,
-        data=WEBTEXT_DS_CFG,
+        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
         llm=GEMMA2_LLM_CFG,
-        sae=[None] + GEMMA2_SAE_CFGS,
+        sae=None,  # set by act_paths
+        act_path=None,  # set by act_paths
     )
 
     for cfg in configs:
-
-        if cfg.sae is None:
-            # Run on LLM activations
-            keys = ["activations", "surrogate"]
-        elif "temporal" in cfg.sae.name.lower():
-            # Run on codes and reconstruction
-            keys = [
-                f"{cfg.sae.name}/novel_codes",
-                f"{cfg.sae.name}/novel_recons",
-                f"{cfg.sae.name}/pred_codes",
-                f"{cfg.sae.name}/pred_recons",
-                f"{cfg.sae.name}/total_recons",
-            ]
-        else:
-            keys = [f"{cfg.sae.name}/latents", f"{cfg.sae.name}/reconstructions"]
-
         artifacts, _ = load_matching_activations(
-            cfg, keys, cfg.env.activations_dir, compared_attributes=["llm", "data"]
+            cfg,
+            [cfg.act_path],
+            cfg.env.activations_dir,
+            compared_attributes=["llm", "data"],
+            verbose=False,
         )
-        for key in artifacts:
-            acts_BPD = artifacts[key]
-            key_config = deepcopy(cfg)
-            key_config.act_path = key
-            single_pca_experiment(cfg, acts_BPD)
-            time.sleep(1)
+        acts_BPD = artifacts[cfg.act_path]
+        single_autocorrelation_experiment(cfg, acts_BPD)
+        time.sleep(1)
 
 
 if __name__ == "__main__":

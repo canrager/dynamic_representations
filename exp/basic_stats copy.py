@@ -112,9 +112,28 @@ def batch_compute_statistics(sae_cache_dir: str, cfg: BasicStatsConfig):
         f_BLS = th.load(path, weights_only=False).to(device=cfg.env.device, dtype=dtype)
         f_BLS = f_BLS[:, ps, :]
 
-        l0 = compute_l0_norm(f_BLS)
-        l1 = compute_l1_norm(f_BLS)
-        frac_alive = compute_fraction_alive_features(f_BLS)
+        B, L, S = f_BLS.shape
+
+        l0_results = []
+        l1_results = []
+        num_activations_S = th.zeros(S, device=cfg.env.device, dtype=th.int)
+
+        for i in range(0, B, batch_size):
+            end_idx = min(i + batch_size, B)
+            f_batch = f_BLS[i:end_idx]
+
+            l0_batch = compute_l0_norm(f_batch)
+            l1_batch = compute_l1_norm(f_batch)
+            num_activations_S += (f_batch != 0).int().sum(dim=(0, 1))
+
+            l0_results.append(l0_batch)
+            l1_results.append(l1_batch)
+
+        l0 = th.cat(l0_results, dim=0)
+        l1 = th.cat(l1_results, dim=0)
+
+        is_alive_S = (num_activations_S > 0.5).int()
+        frac_alive = is_alive_S.sum() / is_alive_S.shape[0]
 
         results[fn] = dict(
             l0=compute_mean_and_error(l0),
@@ -134,10 +153,32 @@ def batch_compute_statistics(sae_cache_dir: str, cfg: BasicStatsConfig):
         x_hat_BLD = th.load(path, weights_only=False).to(device=cfg.env.device, dtype=dtype)
         x_hat_BLD = x_hat_BLD[:, ps, :]
 
-        mse = compute_mse(x_hat_BLD, x_BLD)
-        nmse = compute_normalized_mse(x_hat_BLD, x_BLD)
-        fve = compute_fraction_variance_explained(x_hat_BLD, x_BLD)
-        cos_sim = compute_cosine_similarity(x_hat_BLD, x_BLD)
+        B, L, D = x_hat_BLD.shape
+
+        mse_results = []
+        nmse_results = []
+        fve_results = []
+        cos_sim_results = []
+
+        for i in range(0, B, batch_size):
+            end_idx = min(i + batch_size, B)
+            x_hat_batch = x_hat_BLD[i:end_idx]
+            x_batch = x_BLD[i:end_idx]
+
+            mse_batch = compute_mse(x_hat_batch, x_batch)
+            nmse_batch = compute_normalized_mse(x_hat_batch, x_batch)
+            fve_batch = compute_fraction_variance_explained(x_hat_batch, x_batch)
+            cos_sim_batch = compute_cosine_similarity(x_hat_batch, x_batch)
+
+            mse_results.append(mse_batch)
+            nmse_results.append(nmse_batch)
+            fve_results.append(fve_batch)
+            cos_sim_results.append(cos_sim_batch)
+
+        mse = th.cat(mse_results, dim=0) if len(mse_results[0].shape) > 0 else th.stack(mse_results, dim=0)
+        nmse = th.cat(nmse_results, dim=0) if len(nmse_results[0].shape) > 0 else th.stack(nmse_results, dim=0)
+        fve = th.cat(fve_results, dim=0) if len(fve_results[0].shape) > 0 else th.stack(fve_results, dim=0)
+        cos_sim = th.cat(cos_sim_results, dim=0)
 
         results[fn] = dict(
             mse=compute_mean_and_error(mse),

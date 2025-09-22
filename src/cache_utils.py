@@ -304,6 +304,7 @@ def batch_dictionarylearning_sae_cache(
 
     return recons, latent_actss, latent_indicess
 
+@th.inference_mode
 def batch_temporal_sae_cache(
     sae, act_BPD: Tensor, cfg
 ) -> Tuple[Tensor, Tensor, Tensor]:
@@ -315,18 +316,30 @@ def batch_temporal_sae_cache(
         batch = act_BPD[i : i + cfg.sae.batch_size]
         batch = batch.to(device=cfg.env.device, dtype=dtype)
         recon_BPD, batch_dict = sae.forward(batch, return_graph=True)
+        residuals_BPD = batch - recon_BPD
         results["total_recons"].append(recon_BPD.detach().cpu())
+        results["residuals"].append(residuals_BPD.detach().cpu())
         results["novel_codes"].append(batch_dict["novel_codes"].detach().cpu())
         results["novel_recons"].append(batch_dict["novel_recons"].detach().cpu())
         results["pred_codes"].append(batch_dict["pred_codes"].detach().cpu())
         results["pred_recons"].append(batch_dict["pred_recons"].detach().cpu())
         results["attn_graphs"].append(batch_dict["attn_graphs"].detach().cpu())
 
+        # Add the reconstruction bias
+        results["novel_recons_plus_b"].append(
+            (batch_dict["novel_recons"] + sae.b).detach().cpu()
+        )
+        results["pred_recons_plus_b"].append(
+            (batch_dict["pred_recons"] + sae.b).detach().cpu()
+        )
+
+
     for key in results:
         results[key] = th.cat(results[key], dim=0)
 
     return results
 
+@th.inference_mode
 def batch_standard_sae_cache(
     sae, act_BPD: Tensor, cfg
 ) -> Tuple[Tensor, Tensor, Tensor]:
@@ -343,9 +356,11 @@ def batch_standard_sae_cache(
             recons_ND, codes_ND, _ = sae.forward(batch_ND, return_hidden=True)
         recons_BPD = recons_ND.view(b, P, D)
         codes_BPD = codes_ND.view(b, P, cfg.sae.dict_size)
+        residuals_BPD = batch - recons_BPD
 
         results["codes"].append(codes_BPD.detach().cpu())
         results["recons"].append(recons_BPD.detach().cpu())
+        results["residuals"].append(residuals_BPD.detach().cpu())
 
     for key in results:
         results[key] = th.cat(results[key], dim=0)

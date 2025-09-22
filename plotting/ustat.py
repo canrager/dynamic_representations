@@ -18,36 +18,49 @@ from src.configs import *
 from src.plotting_utils import savefig
 
 
-def plot_allinone(results):
+def plot_allinone(results, show_hidden_dim=False, show_num_sequences=False):
     metrics = ["ustat", "rank"]
     for metric in metrics:
         for result_name, result in results.items():
             label = result["config"]["act_path"]
+            linestyle = "-"  # default solid line
             if result["config"]["sae"]:
-                label = f"{result["config"]["sae"]["name"]} / {label}"
+                sae_name = result["config"]["sae"]["name"]
+                label = f"{sae_name} / {label}"
+                # Use dashed line for architectures that don't contain "temporal"
+                if "temporal" not in sae_name:
+                    linestyle = "--"
+            else:
+                # Use dotted line for cases with no SAE
+                linestyle = ":"
 
-            label += f"{result["config"]["num_sequences"]}seq"
+            if show_num_sequences:
+                label += f"{result["config"]["num_sequences"]}seq"
 
             plt.plot(
                 result["ps"],
                 result[f"{metric}_p"],
                 label=label,
+                linestyle=linestyle,
+                marker="o",
             )
-        plt.axhline(y=int(result["config"]["llm"]["hidden_dim"]), color='red', linestyle='--', label='Hidden Dim')
+
+        if show_hidden_dim:
+            plt.axhline(y=int(result["config"]["llm"]["hidden_dim"]), color='red', linestyle='--', label='Hidden Dim')
 
         plt.xlabel("Sequence Position")
         plt.ylabel(metric)
-        plt.legend()
-        plt.yscale("log")
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        # plt.yscale("log")
         plt.xscale("log")
 
         # Set tick formatters to use absolute numbers instead of exponential notation
         plt.gca().xaxis.set_major_formatter(ticker.ScalarFormatter())
-        plt.gca().yaxis.set_major_formatter(ticker.ScalarFormatter())
+        # plt.gca().yaxis.set_major_formatter(ticker.ScalarFormatter())
 
         # Ensure at least 3 ticks on each axis
         plt.gca().xaxis.set_major_locator(ticker.LogLocator(numticks=5))
-        plt.gca().yaxis.set_major_locator(ticker.LogLocator(numticks=5))
+        # plt.gca().yaxis.set_major_locator(ticker.LogLocator(numticks=5))
 
         savefig(f"{metric}_across_num_sequences")
 
@@ -70,7 +83,7 @@ def main():
         #     num_sequences=1000,
         #     context_length=500,
         # ),
-        data=WEBTEXT_DS_CFG
+        data=WEBTEXT_DS_CFG,
         llm=GEMMA2_LLM_CFG,
         sae=None,  # overwritten
         act_path=None,  # overwritten
@@ -83,19 +96,19 @@ def main():
                     "surrogate"
                 ]
             ),
-            # (
-            #     GEMMA2_SNAPSHOT_SAE_CFGS,
-            #     [
-            #         # "latents",
-            #         "reconstructions"
-            #     ]
-            # ),
             (
-                [TEMPORAL_GEMMA2_SAE_CFG],
+                [BATCHTOPK_SELFTRAIN_SAE_CFG],
                 [
-                    # "novel_codes",
+                    # "codes",
+                    "recons"
+                ]
+            ),
+            (
+                [TEMPORAL_SELFTRAIN_SAE_CFG],
+                [
+                    "novel_codes",
                     "novel_recons",
-                    # "pred_codes",
+                    "pred_codes",
                     "pred_recons",
                     "total_recons",
                 ]

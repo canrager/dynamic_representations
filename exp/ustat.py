@@ -109,7 +109,24 @@ def main():
                 [None], 
                 [
                     "activations", 
-                    # "surrogate"
+                    "surrogate"
+                ]
+            ),
+            (
+                [BATCHTOPK_SELFTRAIN_SAE_CFG],
+                [
+                    "codes",
+                    "recons"
+                ]
+            ),
+            (
+                [TEMPORAL_SELFTRAIN_SAE_CFG],
+                [
+                    "novel_codes",
+                    "novel_recons",
+                    "pred_codes",
+                    "pred_recons",
+                    "total_recons",
                 ]
             ),
         ),
@@ -118,15 +135,10 @@ def main():
         max_p=499,  # 0-indexed
         num_p=7,
         do_log_spacing=True,
-        num_sequences=[10, 100, 1000, 10000],
+        num_sequences=[1000],
         # Artifacts
         env=ENV_CFG,
-        data=DatasetConfig(
-            name="Webtext",
-            hf_name="monology/pile-uncopyrighted",
-            num_sequences=10000,
-            context_length=500,
-        ),
+        data=[WEBTEXT_DS_CFG],
         llm=GEMMA2_LLM_CFG,
         sae=None,  # set by act_paths
         act_path=None,  # set by act_paths

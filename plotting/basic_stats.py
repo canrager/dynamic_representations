@@ -55,41 +55,49 @@ def plot_stats_across_saes(results):
     for dataset_data in datasets.values():
         all_saes.update(dataset_data.keys())
 
+    # Define which activation types to show for each metric category
+    shown_temporal_act_types = {
+        "codes": [
+            "codes", # standard
+            # "pred_codes",
+            "novel_codes",
+        ],
+        "recons": [
+            "recons", # standard
+            # "pred_recons",
+            # "novel_recons",
+            "total_recons",
+        ]
+    }
+
+    # Option to sync colors across activation types from the same SAE architecture
+    sync_sae_colors = True
+
     # Define metrics to plot based on actual computation in exp/basic_stats.py
     codes_metrics = [
         ('l0', 'L0 over sequence position'),
-        ('l1', 'L1 over sequence position'),
-        ('fraction_alive', 'Fraction alive')  # Special case: bar plot
+        # ('l1', 'L1 over sequence position'),
+        # ('fraction_alive', 'Fraction alive')  # Special case: bar plot
     ]
 
     recons_metrics = [
-        ('mse', 'MSE over sequence position'),
+        # ('mse', 'MSE over sequence position'),
         ('normalized_mse', 'Normalized MSE over sequence position'),
-        ('fraction_variance_explained', 'Fraction variance explained over sequence position'),
+        # ('fraction_variance_explained', 'Fraction variance explained over sequence position'),
         ('cosine_similarity', 'Cosine similarity over sequence position')
     ]
 
     all_metrics = codes_metrics + recons_metrics
 
     # Create subplot grid
+    factor = 5
     fig, axes = plt.subplots(len(dataset_names), len(all_metrics),
-                            figsize=(len(all_metrics) * 8, len(dataset_names) * 8))
+                            figsize=(len(all_metrics) * factor, len(dataset_names) * factor))
 
     if len(dataset_names) == 1:
         axes = axes.reshape(1, -1)
     if len(all_metrics) == 1:
         axes = axes.reshape(-1, 1)
-
-    # Define colors for each SAE/activation_type combination
-    all_sae_activation_combos = set()
-    for dataset_data in datasets.values():
-        for sae_name, result in dataset_data.items():
-            activation_types = [k for k in result.keys() if k.endswith('.pt')]
-            for act_type in activation_types:
-                all_sae_activation_combos.add(f"{sae_name}/{act_type[:-3]}")
-
-    # Use strong, well-visible colors only
-    num_combos = len(all_sae_activation_combos)
 
     # Define strong, dark colors manually for better visibility
     strong_colors = [
@@ -135,14 +143,47 @@ def plot_stats_across_saes(results):
         '#d2691e',  # Chocolate
     ]
 
-    if num_combos <= len(strong_colors):
-        colors = [strong_colors[i] for i in range(num_combos)]
-    else:
-        # If we need more colors, cycle through strong colors with slight variations
-        base_colors = strong_colors * ((num_combos // len(strong_colors)) + 1)
-        colors = base_colors[:num_combos]
+    # Define color mapping based on sync_sae_colors option
+    combo_colors = {}
 
-    combo_colors = dict(zip(sorted(all_sae_activation_combos), colors))
+    if sync_sae_colors:
+        # Same color for all activation types from the same SAE architecture
+        all_saes = set()
+        for dataset_data in datasets.values():
+            all_saes.update(dataset_data.keys())
+
+        num_saes = len(all_saes)
+        if num_saes <= len(strong_colors):
+            colors = [strong_colors[i] for i in range(num_saes)]
+        else:
+            base_colors = strong_colors * ((num_saes // len(strong_colors)) + 1)
+            colors = base_colors[:num_saes]
+
+        sae_colors = dict(zip(sorted(all_saes), colors))
+
+        for dataset_data in datasets.values():
+            for sae_name, result in dataset_data.items():
+                activation_types = [k for k in result.keys() if k.endswith('.pt')]
+                for act_type in activation_types:
+                    combo_label = f"{sae_name}/{act_type[:-3]}"
+                    combo_colors[combo_label] = sae_colors[sae_name]
+    else:
+        # Different color for each SAE/activation type combination
+        all_sae_activation_combos = set()
+        for dataset_data in datasets.values():
+            for sae_name, result in dataset_data.items():
+                activation_types = [k for k in result.keys() if k.endswith('.pt')]
+                for act_type in activation_types:
+                    all_sae_activation_combos.add(f"{sae_name}/{act_type[:-3]}")
+
+        num_combos = len(all_sae_activation_combos)
+        if num_combos <= len(strong_colors):
+            colors = [strong_colors[i] for i in range(num_combos)]
+        else:
+            base_colors = strong_colors * ((num_combos // len(strong_colors)) + 1)
+            colors = base_colors[:num_combos]
+
+        combo_colors = dict(zip(sorted(all_sae_activation_combos), colors))
 
     # Track legend entries separately for codes and recons
     codes_legend_entries = set()
@@ -171,10 +212,13 @@ def plot_stats_across_saes(results):
                     # Line plots for sequence-dependent metrics
                     for act_type in activation_types:
                         # Determine if this activation type is relevant for this metric
-                        if is_codes_metric and 'codes' not in act_type:
-                            continue
-                        if not is_codes_metric and 'recons' not in act_type:
-                            continue
+                        act_type_name = act_type[:-3]  # Remove .pt extension
+                        if is_codes_metric:
+                            if act_type_name not in shown_temporal_act_types["codes"]:
+                                continue
+                        else:
+                            if act_type_name not in shown_temporal_act_types["recons"]:
+                                continue
 
                         if metric_key in result[act_type]:
                             metric_data = result[act_type][metric_key]
@@ -236,7 +280,8 @@ def plot_stats_across_saes(results):
                 for sae_name, result in dataset_data.items():
                     activation_types = [k for k in result.keys() if k.endswith('.pt')]
                     for act_type in activation_types:
-                        if 'codes' in act_type and metric_key in result[act_type]:
+                        act_type_name = act_type[:-3]  # Remove .pt extension
+                        if act_type_name in shown_temporal_act_types["codes"] and metric_key in result[act_type]:
                             fraction_alive_values.append(result[act_type][metric_key])
                             combo_label = f"{sae_name}/{act_type[:-3]}"
                             labels.append(combo_label)
@@ -251,7 +296,10 @@ def plot_stats_across_saes(results):
 
     # Create separate legends for codes and recons
     plt.tight_layout()
-    plt.subplots_adjust(right=0.75)  # Make more room for legends
+    # plt.subplots_adjust(right=0.75)  # Make more room for legends
+
+    legend_y_top = 0.85
+    legend_y_spacing = 0.05
 
     # Codes legend
     if codes_legend_entries:
@@ -264,9 +312,12 @@ def plot_stats_across_saes(results):
                                           marker='o', linestyle=linestyle))
             codes_labels.append(combo_label)
 
+        codes_legend_height = len(codes_labels) * 0.03
+        codes_y_pos = legend_y_top - codes_legend_height / 2
+
         codes_legend = fig.legend(codes_handles, codes_labels,
                                 title="Codes Metrics",
-                                loc='center left', bbox_to_anchor=(1.02, 0.7))
+                                loc='center left', bbox_to_anchor=(1.02, codes_y_pos))
 
     # Recons legend
     if recons_legend_entries:
@@ -279,14 +330,19 @@ def plot_stats_across_saes(results):
                                            marker='o', linestyle=linestyle))
             recons_labels.append(combo_label)
 
+        # Position recons legend below codes legend
+        recons_legend_height = len(recons_labels) * 0.03
+        if codes_legend_entries:
+            codes_legend_height = len(codes_legend_entries) * 0.03
+            recons_y_pos = legend_y_top - codes_legend_height - legend_y_spacing - recons_legend_height / 2
+        else:
+            recons_y_pos = legend_y_top - recons_legend_height / 2
+
         recons_legend = fig.legend(recons_handles, recons_labels,
                                  title="Recons Metrics",
-                                 loc='center left', bbox_to_anchor=(1.02, 0.3))
+                                 loc='center left', bbox_to_anchor=(1.02, recons_y_pos))
 
-    plt.tight_layout()
-    plt.subplots_adjust(right=0.85)  # Make room for legend
-
-    savefig("basic_stats_comparison")
+    savefig("basic_stats_comparison", suffix=".pdf")
     plt.show()
 
 def main():
@@ -302,8 +358,11 @@ def main():
         data=WEBTEXT_DS_CFG,
         llm=GEMMA2_LLM_CFG,
         # sae=GEMMA2_SELFTRAIN_SAE_CFGS,
+        # sae=GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
         # sae=GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS + GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
-        sae=TEMPORAL_SELFTRAIN_SAE_CFG
+        # sae=GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
+        # sae=TEMPORAL_SELFTRAIN_SAE_CFG
+        sae=[TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG]
     )
 
     results = load_results_multiple_configs(
