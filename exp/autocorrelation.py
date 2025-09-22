@@ -48,7 +48,10 @@ def compute_autocorrelation_heatmap(cfg: AutocorrelationConfig, act_BPD: th.Tens
     window_act_WBpD = act_BPD[window_batch_indices_WBp, window_pos_indices_WBp, :]
 
     autocorr_WBp = einops.einsum(anchor_act_WBD, window_act_WBpD, "W B D, W B p D -> W B p")
-    autocorr_Wp = autocorr_WBp.mean(dim=1)
+    if cfg.act_path == "surrogate":
+        autocorr_Wp = autocorr_WBp.mean(dim=1)
+    else:
+        autocorr_Wp = autocorr_WBp[:, 0, :] # single sample
 
     return autocorr_Wp, anchors_W, relative_offsets_p
 
@@ -82,26 +85,26 @@ def main():
             (
                 [None], 
                 [
-                    # "activations", 
-                    # "surrogate"
+                    "activations", 
+                    "surrogate"
                 ]
             ),
             (
                 [BATCHTOPK_SELFTRAIN_SAE_CFG],
                 [
-                    # "codes",
-                    # "recons"
+                    "codes",
+                    "recons",
                     "residuals"
                 ]
             ),
             (
                 [TEMPORAL_SELFTRAIN_SAE_CFG],
                 [
-                    # "novel_codes",
-                    # "novel_recons",
-                    # "pred_codes",
-                    # "pred_recons",
-                    # "total_recons",
+                    "novel_codes",
+                    "novel_recons",
+                    "pred_codes",
+                    "pred_recons",
+                    "total_recons",
                     "residuals"
                 ]
             ),
