@@ -60,15 +60,17 @@ def main():
         max_p=499,  # 0-indexed
         num_p=7,
         do_log_spacing=True,
-        num_sequences=[10, 100, 1000, 10000],
+        # num_sequences=[10, 100, 1000, 10000],
+        num_sequences=1000,
         # Artifacts
         env=ENV_CFG,
-        data=DatasetConfig(
-            name="Webtext",
-            hf_name="monology/pile-uncopyrighted",
-            num_sequences=10000,
-            context_length=500,
-        ),
+        # data=DatasetConfig(
+        #     name="Webtext",
+        #     hf_name="monology/pile-uncopyrighted",
+        #     num_sequences=1000,
+        #     context_length=500,
+        # ),
+        data=WEBTEXT_DS_CFG
         llm=GEMMA2_LLM_CFG,
         sae=None,  # overwritten
         act_path=None,  # overwritten
@@ -78,7 +80,7 @@ def main():
                 [None], 
                 [
                     "activations", 
-                    # "surrogate"
+                    "surrogate"
                 ]
             ),
             # (
@@ -88,16 +90,16 @@ def main():
             #         "reconstructions"
             #     ]
             # ),
-            # (
-            #     [TEMPORAL_GEMMA2_SAE_CFG],
-            #     [
-            #         # "novel_codes",
-            #         "novel_recons",
-            #         # "pred_codes",
-            #         "pred_recons",
-            #         "total_recons",
-            #     ]
-            # ),
+            (
+                [TEMPORAL_GEMMA2_SAE_CFG],
+                [
+                    # "novel_codes",
+                    "novel_recons",
+                    # "pred_codes",
+                    "pred_recons",
+                    "total_recons",
+                ]
+            ),
         ),
     )
 
@@ -107,7 +109,7 @@ def main():
         target_folder=configs[0].env.results_dir,
         recency_rank=0,
         compared_attributes=None,  # compare all attributes
-        verbose=True,
+        verbose=False,
     )
     plot_allinone(results)
 

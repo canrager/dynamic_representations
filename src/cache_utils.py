@@ -327,7 +327,6 @@ def batch_temporal_sae_cache(
 
     return results
 
-
 def batch_standard_sae_cache(
     sae, act_BPD: Tensor, cfg
 ) -> Tuple[Tensor, Tensor, Tensor]:
@@ -340,8 +339,8 @@ def batch_standard_sae_cache(
         batch = batch.to(device=cfg.env.device, dtype=dtype)
         b = batch.shape[0]
         batch_ND = batch.view(b * P, D)
-
-        recons_ND, codes_ND, _ = sae.forward(batch_ND, return_hidden=True)
+        with th.inference_mode():
+            recons_ND, codes_ND, _ = sae.forward(batch_ND, return_hidden=True)
         recons_BPD = recons_ND.view(b, P, D)
         codes_BPD = codes_ND.view(b, P, cfg.sae.dict_size)
 

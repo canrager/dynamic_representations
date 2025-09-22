@@ -15,6 +15,7 @@ import gc
 import json
 import numpy as np
 from datetime import datetime
+import gc
 
 from src.model_utils import load_nnsight_model, load_sae
 from src.exp_utils import compute_llm_artifacts
@@ -25,6 +26,7 @@ from src.configs import *
 
 @dataclass
 class CacheConfig:
+    scaling_factor: float
     data: DatasetConfig
     llm: LLMConfig
     sae: (
@@ -43,7 +45,7 @@ def cache_llm_activations(cfg):
     acts_LBPD, masks_LBPD, tokens_BP = compute_llm_artifacts(cfg, model, submodule)
 
     # Move tensors to CPU before saving to free GPU memory
-    acts_LBPD = acts_LBPD.cpu()
+    acts_LBPD = cfg.scaling_factor * acts_LBPD.cpu()
     masks_LBPD = masks_LBPD.cpu()
     tokens_BP = tokens_BP.cpu()
 
@@ -135,6 +137,7 @@ def cache_selftrain_sae_activations(cfg: CacheConfig):
 
     os.makedirs(save_dir, exist_ok=True)
 
+    print(F"caching activations for {cfg.sae.name}")
     sae = load_sae(cfg)
     results_dict = batch_sae_cache(sae, llm_act_BPD, cfg)
 
@@ -155,6 +158,7 @@ def cache_sae_activations(cfg: CacheConfig):
 def main():
     cache_configs = get_configs(
         CacheConfig,
+        scaling_factor = 0.00666666667, # For gemma2-2b on monology/pile-uncopyrighted
         # data=DatasetConfig(
         #     # name="SimpleStories",
         #     # name="Code",
@@ -166,6 +170,7 @@ def main():
         #     context_length=500,
         # ),
         data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        # data=WEBTEXT_DS_CFG,
         llm=LLMConfig(
             name="Gemma-2-2B",
             hf_name="google/gemma-2-2b",
@@ -174,6 +179,9 @@ def main():
             hidden_dim=2304,
             batch_size=50,
         ),
+        # sae=TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG,
+        # sae=MP_SELFTRAIN_SAE_CFG,
+        # sae=GEMMA2_SELFTRAIN_SAE_CFGS,
         sae=[None] + GEMMA2_SELFTRAIN_SAE_CFGS,
         env=ENV_CFG,
     )
