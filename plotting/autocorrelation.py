@@ -139,20 +139,27 @@ def main():
                 ]
             ),
             (
+                GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
+                [
+                    "codes",
+                    "recons"
+                ]
+            ),
+            (
                 [BATCHTOPK_SELFTRAIN_SAE_CFG],
                 [
                     # "codes",
-                    "recons",
+                    # "recons",
                     # "residuals",
                 ]
             ),
             (
                 [TEMPORAL_SELFTRAIN_SAE_CFG],
                 [
-                    # "novel_codes",
-                    # "novel_recons",
-                    # "pred_codes",
-                    # "pred_recons",
+                    "novel_codes",
+                    "novel_recons",
+                    "pred_codes",
+                    "pred_recons",
                     "total_recons",
                     # "residuals",
                 ]
@@ -165,7 +172,8 @@ def main():
         max_offset=30,  # absolute value
         # Artifacts
         env=ENV_CFG,
-        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        data=WEBTEXT_DS_CFG,
         llm=GEMMA2_LLM_CFG,
         sae=None,  # set by act_paths
         act_path=None,  # set by act_paths

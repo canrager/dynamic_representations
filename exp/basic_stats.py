@@ -180,8 +180,8 @@ def main():
         num_p=10,
         # Artifacts
         env=ENV_CFG,
-        # data=WEBTEXT_DS_CFG,
-        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        data=WEBTEXT_DS_CFG,
+        # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
         llm=GEMMA2_LLM_CFG,
         # sae=RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
         sae=GEMMA2_SELFTRAIN_SAE_CFGS,

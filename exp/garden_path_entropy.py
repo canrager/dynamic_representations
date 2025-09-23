@@ -73,17 +73,17 @@ def compute_entropy_and_magnitude(acts_BPD: th.Tensor, masks_BP: th.Tensor, num_
             # Take the last num_final_tokens positions
             final_positions = valid_positions[-num_final_tokens:]
 
-        if debug and b == 0:  # Debug first sequence
-            print(f"  Debug: valid_positions length: {len(valid_positions)}")
-            print(f"  Debug: final_positions: {final_positions.tolist()}")
+        # if debug and b == 0:  # Debug first sequence
+            # print(f"  Debug: valid_positions length: {len(valid_positions)}")
+            # print(f"  Debug: final_positions: {final_positions.tolist()}")
 
         # Extract activations for final positions
         final_acts_FD = acts_BPD[b, final_positions, :]  # [F, D]
 
-        if debug and b == 0:
-            print(f"==>> final_acts_FD: {final_acts_FD}")
-            print(f"  Debug: final_acts_FD shape: {final_acts_FD.shape}")
-            print(f"  Debug: final_acts_FD range: [{final_acts_FD.min():.4f}, {final_acts_FD.max():.4f}]")
+        # if debug and b == 0:
+            # print(f"==>> final_acts_FD: {final_acts_FD}")
+            # print(f"  Debug: final_acts_FD shape: {final_acts_FD.shape}")
+            # print(f"  Debug: final_acts_FD range: [{final_acts_FD.min():.4f}, {final_acts_FD.max():.4f}]")
 
         # Compute L2 magnitude
         magnitude_F = th.norm(final_acts_FD, dim=-1)  # [F]
@@ -91,19 +91,23 @@ def compute_entropy_and_magnitude(acts_BPD: th.Tensor, masks_BP: th.Tensor, num_
         # Compute Shannon entropy with temperature scaling
         temperature = 1  # You can experiment with different values
         scaled_acts_FD = final_acts_FD / temperature
+        scaled_acts_FD = scaled_acts_FD / ((scaled_acts_FD > 0).float().mean(dim=-1, keepdim=True) *0.008)
+        print((scaled_acts_FD > 0).float().mean(dim=-1, keepdim=True) *0.008)
 
         # Apply softmax across the feature dimension
         probs_FD = F.softmax(scaled_acts_FD, dim=-1)  # [F, D]
 
-        if debug and b == 0:
-            print(f"==>> probs_FD: {probs_FD}")
-            print(f"  Debug: probs_FD max per token: {probs_FD.max(dim=-1)[0]}")
-            print(f"  Debug: probs_FD min per token: {probs_FD.min(dim=-1)[0]}")
-            print(f"  Debug: probs_FD entropy should be < {th.log(th.tensor(float(D))):.4f}")
+        # if debug and b == 0:
+            # print(f"==>> probs_FD: {probs_FD}")
+            # print(f"  Debug: probs_FD max per token: {probs_FD.max(dim=-1)[0]}")
+            # print(f"  Debug: probs_FD min per token: {probs_FD.min(dim=-1)[0]}")
+            # print(f"  Debug: probs_FD entropy should be < {th.log(th.tensor(float(D))):.4f}")
 
         # Compute Shannon entropy: -sum(p * log(p))
         # Use more stable computation
-        log_probs_FD = F.log_softmax(scaled_acts_FD, dim=-1)
+        log_probs_FD = F.log_softmax(
+            scaled_acts_FD, dim=-1
+        )
         entropy_F = -th.sum(probs_FD * log_probs_FD, dim=-1)  # [F]
 
         if debug and b == 0:
@@ -157,7 +161,7 @@ def load_garden_path_activations(cfg):
                 compared_attributes=["llm", "data"],
             )
             acts_BPD = acts_BPD[f"sentence_{sentence_type}"]
-            acts_BPD /= cfg.scaling_factor
+            # acts_BPD /= cfg.scaling_factor
 
             # Load corresponding masks
             masks_artifacts, _ = load_matching_activations(
@@ -192,7 +196,7 @@ def load_garden_path_activations(cfg):
                 verbose=False,
             )
             acts_BPD = acts_BPD[target_fname]
-            acts_BPD /= cfg.scaling_factor
+            # acts_BPD /= cfg.scaling_factor
 
             # Load corresponding masks (from LLM cache)
             masks_artifacts, _ = load_matching_activations(
@@ -326,7 +330,7 @@ def main():
                 ]
             ),
         ),
-        num_final_tokens=6,  # Analyze the final 3 tokens
+        num_final_tokens=5,  # Analyze the final 3 tokens
         data=DatasetConfig(
             name="GardenPath",
             hf_name="garden_path.csv",

@@ -105,30 +105,37 @@ def main():
     configs = get_gemma_act_configs(
         cfg_class=IDConfig,
         act_paths=(
+            # (
+            #     [None], 
+            #     [
+            #         "activations", 
+            #         "surrogate"
+            #     ]
+            # ),
             (
-                [None], 
-                [
-                    "activations", 
-                    "surrogate"
-                ]
-            ),
-            (
-                [BATCHTOPK_SELFTRAIN_SAE_CFG],
+                GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
                 [
                     "codes",
                     "recons"
                 ]
             ),
-            (
-                [TEMPORAL_SELFTRAIN_SAE_CFG],
-                [
-                    "novel_codes",
-                    "novel_recons",
-                    "pred_codes",
-                    "pred_recons",
-                    "total_recons",
-                ]
-            ),
+            # (
+            #     [BATCHTOPK_SELFTRAIN_SAE_CFG],
+            #     [
+            #         "codes",
+            #         "recons"
+            #     ]
+            # ),
+            # (
+            #     [TEMPORAL_SELFTRAIN_SAE_CFG],
+            #     [
+            #         "novel_codes",
+            #         "novel_recons",
+            #         "pred_codes",
+            #         "pred_recons",
+            #         "total_recons",
+            #     ]
+            # ),
         ),
         reconstruction_threshold=0.9,
         min_p=20,
@@ -145,14 +152,17 @@ def main():
     )
 
     for cfg in configs:
+        act_path = cfg.act_path
+        if cfg.sae is not None:
+            act_path = os.path.join(cfg.sae.name, cfg.act_path)
         artifacts, _ = load_matching_activations(
             cfg,
-            [cfg.act_path],
+            [act_path],
             cfg.env.activations_dir,
             compared_attributes=["llm", "data"],
             verbose=False,
         )
-        acts_BPD = artifacts[cfg.act_path]
+        acts_BPD = artifacts[act_path]
         single_pca_experiment(cfg, acts_BPD)
         time.sleep(1)
 

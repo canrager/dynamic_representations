@@ -9,7 +9,7 @@ from src.exp_utils import load_tokens_of_story
 
 
 @dataclass
-class SimilarityMatrixConfig:
+class SurprisalSimilarityMatrixConfig:
     figsize: tuple
     cmap: str
     selected_sequence_indices: list[int]
@@ -21,7 +21,7 @@ class SimilarityMatrixConfig:
     env: EnvironmentConfig
 
 @dataclass
-class ActivationConfig:
+class SurprisalActivationConfig:
     env: EnvironmentConfig
     data: DatasetConfig
     llm: LLMConfig
@@ -36,7 +36,7 @@ def pairwise_cosine_similarity(x_LD):
     return th.matmul(x_norm_LD, x_norm_LD.T)
 
 
-def plot_similarity_comparison(sims_by_seq, tokens_by_seq, plot_cfg):
+def plot_surprisal_similarity_comparison(sims_by_seq, tokens_by_seq, masks_by_seq, plot_cfg):
     # Calculate layout: rows = sequences, cols = act_path modes
     num_sequences = len(sims_by_seq)
     num_cols = len(next(iter(sims_by_seq.values())))  # Number of act_path modes
@@ -55,6 +55,12 @@ def plot_similarity_comparison(sims_by_seq, tokens_by_seq, plot_cfg):
     # Create subplots
     for seq_idx, (seq_key, sims) in enumerate(sims_by_seq.items()):
         tokens = tokens_by_seq[seq_key]
+        mask = masks_by_seq[seq_key]
+
+        # Get valid (non-masked) token indices
+        valid_indices = th.where(mask)[0].tolist()
+        valid_tokens = [tokens[i] for i in valid_indices]
+
         for col_idx, (act_key, sim_matrix) in enumerate(sims.items()):
             ax = axes[seq_idx][col_idx]
 
@@ -62,11 +68,11 @@ def plot_similarity_comparison(sims_by_seq, tokens_by_seq, plot_cfg):
             title = f"Seq {seq_key} - {act_key}"
             ax.set_title(title, fontsize=10)
 
-            # Set tick labels to tokens
-            ax.set_xticks(range(len(tokens)))
-            ax.set_yticks(range(len(tokens)))
-            ax.set_xticklabels(tokens, rotation=45, ha="right", fontsize=8)
-            ax.set_yticklabels(tokens, fontsize=8)
+            # Set tick labels to valid tokens only
+            ax.set_xticks(range(len(valid_tokens)))
+            ax.set_yticks(range(len(valid_tokens)))
+            ax.set_xticklabels(valid_tokens, rotation=45, ha="right", fontsize=8)
+            ax.set_yticklabels(valid_tokens, fontsize=8)
 
             if seq_idx == num_sequences - 1:  # Bottom row
                 ax.set_xlabel("Tokens")
@@ -76,13 +82,11 @@ def plot_similarity_comparison(sims_by_seq, tokens_by_seq, plot_cfg):
             # Add individual colorbar for each subplot
             fig.colorbar(im, ax=ax, shrink=0.8)
 
-    # No need to hide empty subplots as we create exact grid
-
     plt.tight_layout()
 
     # Save plot
     os.makedirs(plot_cfg.env.plots_dir, exist_ok=True)
-    save_name = f"similarity_comparison.png"
+    save_name = f"surprisal_similarity_matrix.png"
     plot_path = os.path.join(plot_cfg.env.plots_dir, save_name)
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     print(f"saved figure to: {plot_path}")
@@ -90,11 +94,11 @@ def plot_similarity_comparison(sims_by_seq, tokens_by_seq, plot_cfg):
 
 
 def main():
-    plot_cfg = SimilarityMatrixConfig(
+    plot_cfg = SurprisalSimilarityMatrixConfig(
         figsize=(30, 50),
         cmap="magma",
-        selected_sequence_indices=[0, 2, 3, 4, 5, 6],
-        seq_start_idx=3,
+        selected_sequence_indices=[0, 1, 2, 3, 4, 5, 6],
+        seq_start_idx=1,
         seq_end_idx=50,
         omit_bos_token=True,
 
@@ -103,25 +107,23 @@ def main():
     )
 
     configs = get_gemma_act_configs(
-        cfg_class=ActivationConfig,
+        cfg_class=SurprisalActivationConfig,
         # Artifacts
         env=ENV_CFG,
-        # data=DatasetConfig(
-        #     name="Webtext",
-        #     hf_name="monology/pile-uncopyrighted",
-        #     num_sequences=1000,
-        #     context_length=500,
-        # ),
-        data=SIMPLESTORIES_DS_CFG,
+        data=DatasetConfig(
+            name="Surprisal",
+            hf_name="surprisal.json",
+            num_sequences=59,
+            context_length=None,
+        ),
         llm=GEMMA2_LLM_CFG,
         sae=None,  # overwritten
         # SAE to act_path map
         act_paths=(
             (
-                [None], 
+                [None],
                 [
-                    "activations", 
-                    # "surrogate"
+                    "sentences",
                 ]
             ),
             (
@@ -129,31 +131,28 @@ def main():
                 [
                     "pred_codes",
                     "novel_codes",
-                    # "novel_recons",
-                    # "pred_recons",
-                    # "total_recons",
                 ]
             ),
             (
                 [BATCHTOPK_SELFTRAIN_SAE_CFG],
                 [
                     "codes",
-                    # "recons"
                 ]
             ),
         ),
     )
 
-    print("loading tokens")
+    print("loading tokens and masks")
     art, _ = load_matching_activations(
         configs[0],
-        ["tokens"],
+        ["tokens", "masks"],
         configs[0].env.activations_dir,
         compared_attributes=["llm", "data"],
     )
 
-    # Detokenize dataset tokens for each sequence
+    # Detokenize dataset tokens and load masks for each sequence
     tokens_by_seq = {}
+    masks_by_seq = {}
     for seq_idx in plot_cfg.selected_sequence_indices:
         tokens = load_tokens_of_story(
             tokens_BP=art["tokens"],
@@ -162,9 +161,15 @@ def main():
             omit_BOS_token=plot_cfg.omit_bos_token,
             seq_length=plot_cfg.seq_end_idx,
         )
-        # Truncate tokens to selected range
+        # Get attention mask for this sequence
+        mask = art["masks"][seq_idx]
+        if plot_cfg.omit_bos_token:
+            mask = mask[1:]
+
+        # Truncate tokens and mask to selected range
         tokens_by_seq[seq_idx] = tokens[plot_cfg.seq_start_idx : plot_cfg.seq_end_idx]
-    
+        masks_by_seq[seq_idx] = mask[plot_cfg.seq_start_idx : plot_cfg.seq_end_idx]
+
     print("loading activations")
 
     sims_by_seq = {}
@@ -172,24 +177,28 @@ def main():
         sims_by_seq[seq_idx] = {}
 
         for cfg in configs:
+            act_path = cfg.act_path
+            if cfg.sae is not None:
+                act_path = os.path.join(cfg.sae.name, act_path)
             art, _ = load_matching_activations(
-                cfg, [cfg.act_path], cfg.env.activations_dir, compared_attributes=["llm", "data"], verbose=False
+                cfg, [act_path], cfg.env.activations_dir, compared_attributes=["llm", "data"], verbose=False
             )
-            act_BLD = art[cfg.act_path]
+            act_BLD = art[act_path]
             selected_LD = act_BLD[seq_idx]
             if plot_cfg.omit_bos_token:
                 selected_LD = selected_LD[1:]
             selected_LD = selected_LD[plot_cfg.seq_start_idx : plot_cfg.seq_end_idx]
+            selected_LD = selected_LD - selected_LD.mean(dim=0, keepdim=True)
 
-            if cfg.sae is not None:
-                key = f"{cfg.sae.name} / {cfg.act_path}"
-            else:
-                key = f"llm / {cfg.act_path}"
+            # Apply mask to only keep non-masked tokens
+            mask = masks_by_seq[seq_idx]
+            valid_indices = th.where(mask)[0]
+            masked_LD = selected_LD[valid_indices]
 
-            sims_by_seq[seq_idx][key] = pairwise_cosine_similarity(selected_LD).float()
+            sims_by_seq[seq_idx][act_path] = pairwise_cosine_similarity(masked_LD).float()
 
     # Create and save plot
-    plot_similarity_comparison(sims_by_seq, tokens_by_seq, plot_cfg)
+    plot_surprisal_similarity_comparison(sims_by_seq, tokens_by_seq, masks_by_seq, plot_cfg)
 
 
 if __name__ == "__main__":

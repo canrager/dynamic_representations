@@ -46,7 +46,7 @@ def load_garden_path_entropy_results():
                 ]
             ),
         ),
-        num_final_tokens=6,
+        num_final_tokens=5,
         data=DatasetConfig(
             name="GardenPath",
             hf_name="garden_path.csv",
@@ -385,7 +385,8 @@ def main():
     print("\nCreating individual trajectories plot...")
     plot_individual_trajectories(
         results_dict,
-        save_path=os.path.join(plots_dir, "garden_path_entropy_individual.png")
+        save_path=os.path.join(plots_dir, "garden_path_entropy_individual.png"),
+        max_trajectories=None
     )
 
     # Plot mean and confidence intervals

@@ -32,7 +32,7 @@ ENV_CFG = EnvironmentConfig(
     hf_cache_dir="/home/can/models",
     plots_dir="artifacts/plots",
     results_dir="artifacts/results",
-    text_inputs_dir="artifacts/inputs",
+    text_inputs_dir="artifacts/text_inputs",
     activations_dir="artifacts/activations",
 )
 
@@ -353,8 +353,8 @@ GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS = [
     # TOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
     # TOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
     BATCHTOPK_SELFTRAIN_SAE_CFG,
-    BATCHTOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
-    BATCHTOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
+    # BATCHTOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
+    # BATCHTOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
     MP_SELFTRAIN_SAE_CFG,
 ]
 
@@ -588,6 +588,8 @@ def check_dataclass_dict_overlap(
         else:
             # Check if values are equal
             if source_value != target_value:
+                if source_value == "artifacts/text_inputs":
+                    continue
                 if verbose:
                     print(
                         f"Attribute value mismatch at path '{current_path}': "
@@ -685,13 +687,7 @@ def load_matching_activations(
     artifacts = {}
 
     for filetype in target_filenames:
-        # if source_object.sae is None or filetype == "activations":
-        #     fn = filetype
-        # else:
-        #     fn = f"{source_object.sae.name}/{filetype}"
-
-        fn = filetype
-        path = os.path.join(target_dir, f"{fn}.pt")
+        path = os.path.join(target_dir, f"{filetype}.pt")
         
         with open(path, "rb") as f:
             artifacts[filetype] = th.load(f, weights_only=False)

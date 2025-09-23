@@ -183,7 +183,8 @@ def main():
         # sae=MP_SELFTRAIN_SAE_CFG,
         # sae=GEMMA2_SELFTRAIN_SAE_CFGS,
         # sae=[None] + GEMMA2_SELFTRAIN_SAE_CFGS,
-        sae=GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
+        # sae=GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
+        sae=[None, TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG],
         env=ENV_CFG,
     )
 

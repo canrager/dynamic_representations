@@ -82,32 +82,39 @@ def main():
     configs = get_gemma_act_configs(
         cfg_class=AutocorrelationConfig,
         act_paths=(
+            # (
+            #     [None], 
+            #     [
+            #         "activations", 
+            #         "surrogate"
+            #     ]
+            # ),
             (
-                [None], 
-                [
-                    "activations", 
-                    "surrogate"
-                ]
-            ),
-            (
-                [BATCHTOPK_SELFTRAIN_SAE_CFG],
+                GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
                 [
                     "codes",
-                    "recons",
-                    "residuals"
+                    "recons"
                 ]
             ),
-            (
-                [TEMPORAL_SELFTRAIN_SAE_CFG],
-                [
-                    "novel_codes",
-                    "novel_recons",
-                    "pred_codes",
-                    "pred_recons",
-                    "total_recons",
-                    "residuals"
-                ]
-            ),
+            # (
+            #     [BATCHTOPK_SELFTRAIN_SAE_CFG],
+            #     [
+            #         "codes",
+            #         "recons",
+            #         "residuals"
+            #     ]
+            # ),
+            # (
+            #     [TEMPORAL_SELFTRAIN_SAE_CFG],
+            #     [
+            #         "novel_codes",
+            #         "novel_recons",
+            #         "pred_codes",
+            #         "pred_recons",
+            #         "total_recons",
+            #         "residuals"
+            #     ]
+            # ),
         ),
         min_anchor=50,
         max_anchor=500,  # selected_context_length, inclusive
@@ -123,14 +130,17 @@ def main():
     )
 
     for cfg in configs:
+        act_path = cfg.act_path
+        if cfg.sae is not None:
+            act_path = os.path.join(cfg.sae.name, cfg.act_path)
         artifacts, _ = load_matching_activations(
             cfg,
-            [cfg.act_path],
+            [act_path],
             cfg.env.activations_dir,
             compared_attributes=["llm", "data"],
             verbose=False,
         )
-        acts_BPD = artifacts[cfg.act_path]
+        acts_BPD = artifacts[act_path]
         single_autocorrelation_experiment(cfg, acts_BPD)
         time.sleep(1)
 

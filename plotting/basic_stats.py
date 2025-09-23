@@ -75,7 +75,7 @@ def plot_stats_across_saes(results):
 
     # Define metrics to plot based on actual computation in exp/basic_stats.py
     codes_metrics = [
-        ('l0', 'L0 over sequence position'),
+        # ('l0', 'L0 over sequence position'),
         # ('l1', 'L1 over sequence position'),
         # ('fraction_alive', 'Fraction alive')  # Special case: bar plot
     ]
@@ -84,7 +84,7 @@ def plot_stats_across_saes(results):
         # ('mse', 'MSE over sequence position'),
         ('normalized_mse', 'Normalized MSE over sequence position'),
         # ('fraction_variance_explained', 'Fraction variance explained over sequence position'),
-        ('cosine_similarity', 'Cosine similarity over sequence position')
+        # ('cosine_similarity', 'Cosine similarity over sequence position')
     ]
 
     all_metrics = codes_metrics + recons_metrics
@@ -94,9 +94,15 @@ def plot_stats_across_saes(results):
     fig, axes = plt.subplots(len(dataset_names), len(all_metrics),
                             figsize=(len(all_metrics) * factor, len(dataset_names) * factor))
 
-    if len(dataset_names) == 1:
+    # Handle axes indexing for different subplot configurations
+    if len(dataset_names) == 1 and len(all_metrics) == 1:
+        # Single subplot case - wrap in 2D structure for consistent indexing
+        axes = np.array([[axes]])
+    elif len(dataset_names) == 1:
+        # Single row case
         axes = axes.reshape(1, -1)
-    if len(all_metrics) == 1:
+    elif len(all_metrics) == 1:
+        # Single column case
         axes = axes.reshape(-1, 1)
 
     # Define strong, dark colors manually for better visibility
@@ -358,11 +364,11 @@ def main():
         data=WEBTEXT_DS_CFG,
         llm=GEMMA2_LLM_CFG,
         # sae=GEMMA2_SELFTRAIN_SAE_CFGS,
-        # sae=GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
+        sae=GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
         # sae=GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS + GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
         # sae=GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
         # sae=TEMPORAL_SELFTRAIN_SAE_CFG
-        sae=[TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG]
+        # sae=[TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG]
     )
 
     results = load_results_multiple_configs(
@@ -371,7 +377,7 @@ def main():
         target_folder=configs[0].env.results_dir,
         recency_rank=0,
         compared_attributes=None,  # compare all attributes
-        verbose=False,
+        verbose=True,
     )
     plot_stats_across_saes(results)
 

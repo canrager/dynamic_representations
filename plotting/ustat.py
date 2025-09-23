@@ -97,22 +97,29 @@ def main():
                 ]
             ),
             (
-                [BATCHTOPK_SELFTRAIN_SAE_CFG],
+                GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
                 [
                     # "codes",
                     "recons"
                 ]
             ),
-            (
-                [TEMPORAL_SELFTRAIN_SAE_CFG],
-                [
-                    "novel_codes",
-                    "novel_recons",
-                    "pred_codes",
-                    "pred_recons",
-                    "total_recons",
-                ]
-            ),
+            # (
+            #     [BATCHTOPK_SELFTRAIN_SAE_CFG],
+            #     [
+            #         # "codes",
+            #         "recons"
+            #     ]
+            # ),
+            # (
+            #     [TEMPORAL_SELFTRAIN_SAE_CFG],
+            #     [
+            #         "novel_codes",
+            #         "novel_recons",
+            #         "pred_codes",
+            #         "pred_recons",
+            #         "total_recons",
+            #     ]
+            # ),
         ),
     )
 
@@ -122,7 +129,7 @@ def main():
         target_folder=configs[0].env.results_dir,
         recency_rank=0,
         compared_attributes=None,  # compare all attributes
-        verbose=False,
+        verbose=True,
     )
     plot_allinone(results)
 

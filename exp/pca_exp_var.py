@@ -131,7 +131,7 @@ def single_pca_experiment(cfg: PCAExpVarConfig, acts_BPD: th.Tensor):
 
 
 def main():
-    configs = get_configs(
+    configs = get_gemma_act_configs(
         cfg_class=PCAExpVarConfig,
         window_sizes=(
             20,
@@ -153,30 +153,44 @@ def main():
         env=ENV_CFG,
         data=WEBTEXT_DS_CFG,
         llm=GEMMA2_LLM_CFG,
-        sae=GEMMA2_SAE_CFGS,
+        sae=None,
+        act_paths=(
+            (
+                [None], 
+                [
+                    "activations", 
+                    "surrogate"
+                ]
+            ),
+            # (
+            #     [BATCHTOPK_SELFTRAIN_SAE_CFG],
+            #     [
+            #         "codes",
+            #         "recons",
+            #         "residuals"
+            #     ]
+            # ),
+            # (
+            #     [TEMPORAL_SELFTRAIN_SAE_CFG],
+            #     [
+            #         "novel_codes",
+            #         "novel_recons",
+            #         "pred_codes",
+            #         "pred_recons",
+            #         "total_recons",
+            #         "residuals"
+            #     ]
+            # ),
+        ),
     )
 
     for cfg in configs:
-
-        if cfg.sae is None:
-            # Run on LLM activations
-            keys = ["activations"]
-        elif "temporal" in cfg.sae.name.lower():
-            # Run on codes and reconstruction
-            keys = [
-                f"{cfg.sae.name}/novel_codes",
-                f"{cfg.sae.name}/novel_recons",
-                f"{cfg.sae.name}/pred_codes",
-                f"{cfg.sae.name}/pred_recons",
-                f"{cfg.sae.name}/total_recons",
-            ]
-        else:
-            keys = [f"{cfg.sae.name}/latents", f"{cfg.sae.name}/reconstructions"]
-
-        print(cfg.env.activations_dir)
+        act_path = cfg.act_path
+        if cfg.sae is not None:
+            act_path = os.path.join(cfg.sae.name, cfg.act_path)
 
         artifacts, _ = load_matching_activations(
-            cfg, keys, cfg.env.activations_dir, compared_attributes=["llm", "data"]
+            cfg, [act_path], cfg.env.activations_dir, compared_attributes=["llm", "data"]
         )
         for key in artifacts:
             acts_BPD = artifacts[key]
