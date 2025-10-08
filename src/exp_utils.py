@@ -1,6 +1,7 @@
 import os
 import json
-from typing import Tuple, Optional, List
+import csv
+from typing import Tuple, Optional, List, Dict, Any
 
 import torch as th
 from tqdm import trange
@@ -607,7 +608,7 @@ def load_tokens_of_story(
     """
     tokenizer = load_tokenizer(model_name, MODELS_DIR)
     tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in tokens_BP[story_idx]]
-    tokens = [t.replace("\n", "<newline>") for t in tokens]
+    tokens = [t.replace("\n\n", "\\n") for t in tokens]
 
     if omit_BOS_token:
         # GPT2 doesn't add a BOS token, but other models like Llama do.
@@ -635,3 +636,71 @@ def load_tokens_of_stories(
             load_tokens_of_story(story_idx, model_name, omit_BOS_token, seq_length)
         )
     return tokens_of_stories
+
+
+def compute_mean_and_ci_to_csv(results_dict: Dict[str, Any], output_path: str) -> None:
+    """
+    Compute mean and confidence intervals across values and format into CSV.
+
+    Args:
+        results_dict: Dictionary with structure like the JSON example:
+            {
+                "sae_name.pt": {
+                    "metric_name": {
+                        "score": [list of values],
+                        "ci": [list of ci values] or None
+                    }
+                }
+            }
+        output_path: Path where to save the CSV file
+    """
+    rows = []
+
+    # Extract SAE names (everything except config and sequence_pos_indices)
+    sae_names = [key for key in results_dict.keys()
+                 if key not in ['config', 'sequence_pos_indices']]
+
+    for sae_name in sae_names:
+        sae_data = results_dict[sae_name]
+
+        # Get all metrics for this SAE
+        metrics = [key for key in sae_data.keys() if key != 'fraction_alive']
+
+        row = {'sae_name': sae_name}
+
+        for metric in metrics:
+            metric_data = sae_data[metric]
+            scores = metric_data.get('score', [])
+            cis = metric_data.get('ci', [])
+
+            if scores:
+                # Compute mean
+                mean_score = th.tensor(scores).float().mean().item()
+                row[f'{metric}_mean'] = mean_score
+
+                # Compute CI mean if available
+                if cis and any(ci is not None for ci in cis):
+                    # Filter out None values
+                    valid_cis = [ci for ci in cis if ci is not None]
+                    if valid_cis:
+                        mean_ci = th.tensor(valid_cis).float().mean().item()
+                        row[f'{metric}_ci'] = mean_ci
+                    else:
+                        row[f'{metric}_ci'] = None
+                else:
+                    row[f'{metric}_ci'] = None
+
+        # Add fraction_alive if it exists
+        if 'fraction_alive' in sae_data:
+            row['fraction_alive'] = sae_data['fraction_alive']
+
+        rows.append(row)
+
+    # Write to CSV
+    if rows:
+        fieldnames = list(rows[0].keys())
+
+        with open(output_path, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)

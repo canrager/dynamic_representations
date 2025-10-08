@@ -8,6 +8,7 @@ from datetime import datetime
 from copy import deepcopy
 import time
 import gc
+import json
 
 from src.configs import *
 
@@ -28,13 +29,36 @@ class IDConfig:
     sae: SAEConfig
 
 
+def diagonal_means_batch_vectorized(X):
+    """
+    More vectorized version using torch.diagonal's batch support.
+    """
+    B, P, _ = X.shape
+    Y = th.zeros(B, P)
+
+    for i in range(P):
+        # Extract i-th diagonal for all batches at once
+        diagonals = th.diagonal(X, offset=i, dim1=1, dim2=2)  # Shape: (B, P-i)
+        Y[:, i] = diagonals.mean(dim=1)
+
+    return Y
+
+
 def compute_u_statistic(acts_BPD: th.Tensor, cfg):
     B, P, D = acts_BPD.shape
     id_P = th.zeros(P)
+    surrogate_id_P = th.zeros(P)
 
     acts_BPD = acts_BPD.to(cfg.env.device)
     acts_centered_BPD = acts_BPD - acts_BPD.mean(dim=0).float()
     acts_normalized_BPD = acts_centered_BPD / acts_centered_BPD.norm(dim=-1, keepdim=True)
+
+    # Create different random permutations across P dimension for each batch
+    shuffled_acts_normalized_BPD = th.zeros_like(acts_normalized_BPD)
+    for b in range(B):
+        # Generate a random permutation for this batch
+        perm = th.randperm(P, device=cfg.env.device)
+        shuffled_acts_normalized_BPD[b] = acts_normalized_BPD[b, perm]
 
     for p in range(P):
         X = acts_normalized_BPD[:, p, :]
@@ -43,7 +67,13 @@ def compute_u_statistic(acts_BPD: th.Tensor, cfg):
 
         id_P[p] = (B**2 - B) / (fro2 - B)
 
-    return id_P.cpu()
+        # Compute surrogate ID using shuffled data
+        X_shuffled = shuffled_acts_normalized_BPD[:, p, :]
+        surrogate_gram = X_shuffled @ X_shuffled.T
+        surrogate_fro2 = (surrogate_gram**2).sum()
+        surrogate_id_P[p] = (B**2 - B) / (surrogate_fro2 - B)
+
+    return id_P.cpu(), surrogate_id_P.cpu()
 
 
 def compute_rank(acts_BPD: th.Tensor, cfg):
@@ -79,11 +109,12 @@ def single_pca_experiment(cfg: IDConfig, acts_BPD: th.Tensor):
 
     acts_BpD = acts_BPD[: cfg.num_sequences, ps, :]
 
-    ustat_p = compute_u_statistic(acts_BpD, cfg)
+    ustat_p, surrogate_ustat_p = compute_u_statistic(acts_BpD, cfg)
     rank_p = compute_rank(acts_BpD, cfg)
     results = dict(
         ps=ps.cpu().tolist(),
         ustat_p=ustat_p.cpu().tolist(),
+        surrogate_ustat_p=surrogate_ustat_p.cpu().tolist(),
         rank_p=rank_p.cpu().tolist(),
         config=asdict(cfg),
     )
@@ -106,19 +137,19 @@ def main():
         cfg_class=IDConfig,
         act_paths=(
             # (
-            #     [None], 
+            #     [None],
             #     [
-            #         "activations", 
-            #         "surrogate"
+            #         # "activations",
+            #         # "surrogate"
+            #     ],
+            # ),
+            # (
+            #     GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
+            #     [
+            #         "codes",
+            #         # "recons"
             #     ]
             # ),
-            (
-                GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
-                [
-                    "codes",
-                    "recons"
-                ]
-            ),
             # (
             #     [BATCHTOPK_SELFTRAIN_SAE_CFG],
             #     [
@@ -126,26 +157,27 @@ def main():
             #         "recons"
             #     ]
             # ),
-            # (
-            #     [TEMPORAL_SELFTRAIN_SAE_CFG],
-            #     [
-            #         "novel_codes",
-            #         "novel_recons",
-            #         "pred_codes",
-            #         "pred_recons",
-            #         "total_recons",
-            #     ]
-            # ),
+            (
+                [TEMPORAL_SELFTRAIN_SAE_CFG],
+                [
+                    "novel_codes",
+                    "novel_recons",
+                    "pred_codes",
+                    "pred_recons",
+                    "total_recons",
+                ]
+            ),
         ),
         reconstruction_threshold=0.9,
         min_p=20,
         max_p=499,  # 0-indexed
-        num_p=7,
+        num_p=200,
         do_log_spacing=True,
-        num_sequences=[1000],
+        num_sequences=10000,
         # Artifacts
         env=ENV_CFG,
-        data=[WEBTEXT_DS_CFG],
+        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        # data=WEBTEXT_DS_CFG,
         llm=GEMMA2_LLM_CFG,
         sae=None,  # set by act_paths
         act_path=None,  # set by act_paths

@@ -56,9 +56,9 @@ LLAMA3_LLM_CFG = LLMConfig(
     name="Llama-3.1-8B",
     hf_name="meta-llama/Llama-3.1-8B",
     revision=None,
-    layer_idx=16,
+    layer_idx=12,
     hidden_dim=4096,
-    batch_size=100,
+    batch_size=10,
 )
 
 GEMMA2_LLM_CFG = LLMConfig(

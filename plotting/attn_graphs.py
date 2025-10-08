@@ -30,10 +30,13 @@ class PlotConfig:
 def plot_attn_graphs(graphs_AHLL, tokens, cfg):
     # Create subplot layout
     num_layers, num_heads = graphs_AHLL.shape[:2]
-    dynamic_figsize = (num_heads + 10, 10)
+    dynamic_figsize = (num_heads * 4, 3.5)
     fig, axes = plt.subplots(num_layers, num_heads, figsize=dynamic_figsize, squeeze=False)
 
     graphs_AHLL = graphs_AHLL.to(dtype=th.float32, device="cpu")
+    graphs_AHLL = graphs_AHLL[:, :, :, 1:]
+    if cfg.omit_bos_token:
+        graphs_AHLL = graphs_AHLL[:, :, 1:, 1:]
     vmax = 1
 
     if cfg.use_log_scale:
@@ -66,16 +69,20 @@ def plot_attn_graphs(graphs_AHLL, tokens, cfg):
                 )
 
             # Set tick labels
-            ax.set_xticks(range(len(tokens)))
-            ax.set_yticks(range(len(tokens)))
-            ax.set_xticklabels(tokens, rotation=45, ha="right")
-            ax.set_yticklabels(tokens)
+            ax.set_xticks(range(len(tokens) - 1))
+            ax.set_xticklabels(tokens[:-1], rotation=90, ha="right")
+
+            if head == 0:
+                ax.set_yticks(range(len(tokens)))
+                ax.set_yticklabels(tokens)
+            else:
+                ax.set_yticks([])
 
             # Set title
-            ax.set_title(f"L{layer} H{head}")
+            # ax.set_title(f"L{layer} H{head}")
 
             # Adjust tick label size for readability
-            ax.tick_params(labelsize=8)
+            ax.tick_params(labelsize=7)
 
     # Add shared colorbar (log scale already applied to images)
     fig.subplots_adjust(right=0.85)
@@ -88,7 +95,7 @@ def plot_attn_graphs(graphs_AHLL, tokens, cfg):
     os.makedirs(cfg.env.plots_dir, exist_ok=True)
     save_name = f"attn_maps_{cfg.llm.name}_{cfg.data.name}.png"
     plot_path = os.path.join(cfg.env.plots_dir, save_name)
-    plt.savefig(plot_path, dpi=200, bbox_inches="tight")
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     print(f"saved figure to: {plot_path}")
     plt.close()
 
@@ -97,7 +104,7 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
     num_stories = len(cfg.story_indices)
     # Get number of layers from the first story
     num_layers = graphs_BAHLL.shape[1]
-    summed_figsize = (5 * num_stories + 5, 5 * num_layers)
+    summed_figsize = (5 * num_stories, 5 * num_layers)
     fig, axes = plt.subplots(num_layers, num_stories, figsize=summed_figsize, squeeze=False)
 
     # Find global vmax across all stories and layers for consistent scaling
@@ -173,7 +180,7 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
     # Add shared colorbar
     fig.subplots_adjust(right=0.85)
     cbar_ax = fig.add_axes([0.87, 0.15, 0.02, 0.7])
-    fig.colorbar(im, cax=cbar_ax)
+    fig.colorbar(im, cax=cbar_ax, cmap=cfg.cmap)
 
     # Save plot
     os.makedirs(cfg.env.plots_dir, exist_ok=True)
@@ -186,19 +193,19 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
 
 def main():
     cfg = PlotConfig(
-        figsize=(50, 10),
-        cmap="viridis",
-        selected_sequence_idx=0,  # for the per-head plot
-        story_indices=[0, 1, 2, 3, 4],  # for the sum across heads plot
+        figsize=(10, 10),
+        cmap="magma",
+        selected_sequence_idx=2,  # for the per-head plot
+        story_indices=[0],  # for the sum across heads plot
         seq_start_idx=0,
-        seq_end_idx=100,
-        omit_bos_token=False,
-        use_log_scale=True,
+        seq_end_idx=40,
+        omit_bos_token=True,
+        use_log_scale=False,
         # Artifacts
         env=ENV_CFG,
         data=WEBTEXT_DS_CFG,
         llm=GEMMA2_LLM_CFG,
-        sae=TEMPORAL_GEMMA2_SAE_CFG,
+        sae=TEMPORAL_SELFTRAIN_SAE_CFG,
     )
     cfg.data.num_sequences = 10
 
@@ -214,12 +221,13 @@ def main():
     )
 
     # Detokenize dataset tokens
+    offset = 1 if cfg.omit_bos_token else 0
     tokens = load_tokens_of_story(
         tokens_BP=art["tokens"],
         story_idx=cfg.selected_sequence_idx,
         model_name=cfg.llm.hf_name,
         omit_BOS_token=cfg.omit_bos_token,
-        seq_length=cfg.seq_end_idx,
+        seq_length=cfg.seq_end_idx - offset,
     )
     # Truncate tokens to selected range
     tokens = tokens[cfg.seq_start_idx : cfg.seq_end_idx]

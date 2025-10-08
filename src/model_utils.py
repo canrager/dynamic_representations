@@ -29,7 +29,7 @@ def load_nnsight_model(cfg):
     model = LanguageModel(
         cfg.llm.hf_name,
         revision=cfg.llm.revision,
-        cache_dir=cfg.env.hf_cache_dir,
+        cache_dir=None,#cfg.env.hf_cache_dir,
         device_map=cfg.env.device,  # Use the defined device
         torch_dtype=cfg.env.dtype,
         dispatch=True,

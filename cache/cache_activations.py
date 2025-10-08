@@ -158,7 +158,8 @@ def cache_sae_activations(cfg: CacheConfig):
 def main():
     cache_configs = get_configs(
         CacheConfig,
-        scaling_factor = 0.00666666667, # For gemma2-2b on monology/pile-uncopyrighted
+        # scaling_factor = 0.00666666667, # For gemma2-2b on monology/pile-uncopyrighted
+        scaling_factor = 1,
         # data=DatasetConfig(
         #     # name="SimpleStories",
         #     # name="Code",
@@ -169,22 +170,36 @@ def main():
         #     num_sequences=1000,
         #     context_length=500,
         # ),
-        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
-        # data=WEBTEXT_DS_CFG,
+        # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        data=DatasetConfig(
+            name="Webtext",
+            hf_name="monology/pile-uncopyrighted",
+            num_sequences=10000,
+            context_length=500,
+        ),
+        # llm=LLMConfig(
+        #     name="Gemma-2-2B",
+        #     hf_name="google/gemma-2-2b",
+        #     revision=None,
+        #     layer_idx=12,
+        #     hidden_dim=2304,
+        #     batch_size=50,
+        # ),
         llm=LLMConfig(
-            name="Gemma-2-2B",
-            hf_name="google/gemma-2-2b",
+            name="Llama-3.1-8B",
+            hf_name="meta-llama/Llama-3.1-8B",
             revision=None,
             layer_idx=12,
-            hidden_dim=2304,
-            batch_size=50,
+            hidden_dim=4096,
+            batch_size=10,
         ),
         # sae=TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG,
         # sae=MP_SELFTRAIN_SAE_CFG,
         # sae=GEMMA2_SELFTRAIN_SAE_CFGS,
         # sae=[None] + GEMMA2_SELFTRAIN_SAE_CFGS,
         # sae=GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
-        sae=[None, TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG],
+        # sae=[None, TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG],
+        sae=None,
         env=ENV_CFG,
     )
 
@@ -192,7 +207,7 @@ def main():
         if cfg.sae is None:
             # Cache LLM activations and compute surrogate
             cache_llm_activations(cfg)
-            cache_surrogate_activations(cfg)
+            # cache_surrogate_activations(cfg)
         else:
             # Cache SAE activations and reconstructions
             cache_sae_activations(cfg)

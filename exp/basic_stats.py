@@ -22,6 +22,7 @@ class BasicStatsConfig:
     min_p: int
     max_p: int  # selected_context_length, inclusive
     num_p: int
+    do_log_scale: bool
 
     env: EnvironmentConfig
     data: DatasetConfig
@@ -90,13 +91,16 @@ def compute_mean_and_error(scores):
 def batch_compute_statistics(sae_cache_dir: str, cfg: BasicStatsConfig):
     results = {}
     dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
-    batch_size = 1000
 
     # Find relevant sequence position indices
-    log_start = th.log10(th.tensor(cfg.min_p, dtype=th.float))
-    log_end = th.log10(th.tensor(cfg.max_p, dtype=th.float))
-    log_steps = th.linspace(log_start, log_end, cfg.num_p)
-    ps = th.round(10**log_steps).int()
+    if cfg.do_log_scale:
+        log_start = th.log10(th.tensor(cfg.min_p, dtype=th.float))
+        log_end = th.log10(th.tensor(cfg.max_p, dtype=th.float))
+        log_steps = th.linspace(log_start, log_end, cfg.num_p)
+        ps = th.round(10**log_steps).int()
+    else:
+        ps = th.linspace(cfg.min_p, cfg.max_p, cfg.num_p, dtype=th.int)
+
     results["sequence_pos_indices"] = ps.tolist()
     ps = ps.to(cfg.env.device)
 
@@ -177,11 +181,12 @@ def main():
         cfg_class=BasicStatsConfig,
         min_p=1,
         max_p=499,
-        num_p=10,
+        num_p=20,
+        do_log_scale=False,
         # Artifacts
         env=ENV_CFG,
-        data=WEBTEXT_DS_CFG,
-        # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        # data=WEBTEXT_DS_CFG,
+        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
         llm=GEMMA2_LLM_CFG,
         # sae=RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
         sae=GEMMA2_SELFTRAIN_SAE_CFGS,
