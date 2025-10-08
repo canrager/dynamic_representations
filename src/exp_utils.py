@@ -3,6 +3,8 @@ import json
 import csv
 from typing import Tuple, Optional, List, Dict, Any
 
+from transformers import AutoTokenizer
+
 import torch as th
 from tqdm import trange
 from dataclasses import dataclass
@@ -593,6 +595,7 @@ def load_tokens_of_story(
     model_name: str,
     omit_BOS_token: bool = False,
     seq_length: Optional[int] = None,
+    tokenizer: AutoTokenizer = None,
 ) -> List[str]:
     """
     Load tokens for a single story.
@@ -606,7 +609,9 @@ def load_tokens_of_story(
     Returns:
         A list of tokens for the specified story.
     """
-    tokenizer = load_tokenizer(model_name, MODELS_DIR)
+    if tokenizer is None:
+        tokenizer = load_tokenizer(model_name, MODELS_DIR)
+        
     tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in tokens_BP[story_idx]]
     tokens = [t.replace("\n\n", "\\n") for t in tokens]
 

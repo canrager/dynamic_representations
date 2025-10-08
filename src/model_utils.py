@@ -55,24 +55,23 @@ def load_nnsight_model(cfg):
     return model, submodule, hidden_dim
 
 
-def load_hf_model(
-    llm_name: str,
-    cache_dir: str,
-    device: str,
-    quantization_bits: int = None,
-    tokenizer_only: bool = False,
-    verbose: bool = True,
-):
+def load_hf_model(cfg, tokenizer_only: bool = False, verbose: bool = True):
     """
     Load a huggingface model and tokenizer.
 
     Args:
-        device (str): Device to load the model on ('auto', 'cuda', 'cpu', etc.)
-        cache_dir (str, optional): Directory to cache the downloaded model
+        cfg: Configuration object with properties:
+            - cfg.llm.hf_name: Model name/path
+            - cfg.env.hf_cache_dir: Directory to cache the downloaded model
+            - cfg.env.device: Device to load the model on ('auto', 'cuda', 'cpu', etc.)
+            - cfg.env.dtype: torch dtype for the model
+            - cfg.llm.quantization_bits: Quantization bits (4, 8, or None)
+        tokenizer_only (bool): If True, only return the tokenizer
+        verbose (bool): Print verbose output
     """
 
-    if verbose and cache_dir is not None:
-        local_path = os.path.join(cache_dir, f"models--{llm_name.replace('/', '--')}")
+    if verbose and cfg.env.hf_cache_dir is not None:
+        local_path = os.path.join(cfg.env.hf_cache_dir, f"models--{cfg.llm.hf_name.replace('/', '--')}")
         local_path_exists = os.path.exists(local_path)
         if local_path_exists:
             print(f"Model exists in {local_path}")
@@ -80,13 +79,11 @@ def load_hf_model(
             print(f"Model does not exist in {local_path}")
 
     # Load tokenizer
-    tokenizer = load_tokenizer(llm_name, cache_dir)
+    tokenizer = load_tokenizer(cfg.llm.hf_name, cfg.env.hf_cache_dir)
     if tokenizer_only:
         return tokenizer
 
-    # Determine quantization
-    torch_dtype = th.bfloat16
-
+    quantization_bits = getattr(cfg.llm, 'quantization_bits', None)
     if quantization_bits == 8:
         quantization_config = BitsAndBytesConfig(load_in_8bit=True)
         quantization_config_str = "8-bit"
@@ -98,15 +95,15 @@ def load_hf_model(
         quantization_config_str = "no"
 
     if verbose:
-        print(f"Using {quantization_config_str} quantization and bfloat16")
+        print(f"Using {quantization_config_str} quantization and {cfg.env.dtype}")
 
     # Load model
     model = AutoModelForCausalLM.from_pretrained(
-        llm_name,
-        torch_dtype=torch_dtype,
-        device_map=device,
+        cfg.llm.hf_name,
+        torch_dtype=cfg.env.dtype,
+        device_map=cfg.env.device,
         quantization_config=quantization_config,
-        cache_dir=cache_dir,
+        cache_dir=cfg.env.hf_cache_dir,
     )
 
     # Optimize for inference
