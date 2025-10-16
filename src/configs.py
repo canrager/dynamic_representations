@@ -70,6 +70,15 @@ GEMMA2_LLM_CFG = LLMConfig(
     batch_size=50,
 )
 
+IT_GEMMA2_LLM_CFG = LLMConfig(
+    name="Gemma-2-2B-IT",
+    hf_name="google/gemma-2-2b-it",
+    revision=None,
+    layer_idx=12,
+    hidden_dim=2304,
+    batch_size=50,
+)
+
 
 ######## Dataset ########
 
@@ -89,6 +98,13 @@ WEBTEXT_DS_CFG = DatasetConfig(
     context_length=500,
 )
 
+CHAT_DS_CFG = DatasetConfig(
+    name="Chat",
+    hf_name="HuggingFaceH4/ultrachat_200k",
+    num_sequences=1000,
+    context_length=500,
+)
+
 SIMPLESTORIES_DS_CFG = DatasetConfig(
     name="SimpleStories",
     hf_name="SimpleStories/SimpleStories",
@@ -103,6 +119,12 @@ CODE_DS_CFG = DatasetConfig(
     context_length=500,
 )
 
+TWIST_DS_CFG = DatasetConfig(
+    name="Twist",
+    hf_name="twist.json",
+    num_sequences=1,  # Total number of sentences in JSON
+    context_length=None,  # Use variable length with padding
+)
 
 ######### SAE ##########
 

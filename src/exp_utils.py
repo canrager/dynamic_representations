@@ -588,6 +588,44 @@ def compute_or_load_svd(
 
     return U_LbC, S_LC, Vt_LCD, means_LD
 
+def load_tokens_of_single_story(
+    tokens_P,
+    model_name: str,
+    omit_BOS_token: bool = False,
+    seq_length: Optional[int] = None,
+    tokenizer: AutoTokenizer = None,
+) -> List[str]:
+    """
+    Load tokens for a single story.
+
+    Args:
+        story_idx: Index of the story to load
+        model_name: Name of the model to determine the tokenizer
+        omit_BOS_token: Whether to omit the beginning-of-sequence (BOS) token
+        seq_length: Optional sequence length to truncate or pad tokens
+
+    Returns:
+        A list of tokens for the specified story.
+    """
+    if tokenizer is None:
+        tokenizer = load_tokenizer(model_name, MODELS_DIR)
+        
+    tokens = [tokenizer.decode(t, skip_special_tokens=False) for t in tokens_P]
+    tokens = [t.replace("\n\n", "\\n") for t in tokens]
+
+    if omit_BOS_token:
+        # GPT2 doesn't add a BOS token, but other models like Llama do.
+        # It's safer to check if the first token is a BOS token before removing it.
+        if tokens and tokenizer.bos_token and tokens[0] == tokenizer.bos_token:
+            tokens = tokens[1:]
+        elif tokens and tokens[0] == "<s>":
+            tokens = tokens[1:]
+
+    if seq_length is not None:
+        tokens = tokens[:seq_length]
+
+    return tokens
+
 
 def load_tokens_of_story(
     tokens_BP,

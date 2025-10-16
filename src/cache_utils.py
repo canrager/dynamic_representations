@@ -40,11 +40,21 @@ def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens):
 
     if dataset_name == "SimpleStories/SimpleStories":
         hf_text_identifier = "story"
+        hf_split_identifier = "train"
+        do_chat_template = False
+
+    elif dataset_name == "HuggingFaceH4/ultrachat_200k":
+        hf_text_identifier = "messages"
+        hf_split_identifier = "train_sft"
+        do_chat_template = True
+
     else:
         hf_text_identifier = "text"
+        hf_split_identifier = "train"
+        do_chat_template = False
 
 
-    all_stories = load_dataset(path=dataset_name, cache_dir=MODELS_DIR, streaming=True)["train"]
+    all_stories = load_dataset(path=dataset_name, cache_dir=MODELS_DIR, streaming=True)[hf_split_identifier]
 
     inputs_BP = []
     selected_story_idxs = []
@@ -54,7 +64,11 @@ def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens):
             break
 
         story_text = story_item[hf_text_identifier]
-        input_ids_P = tokenizer(story_text, return_tensors="pt").input_ids
+
+        if do_chat_template:
+            input_ids_P = tokenizer.apply_chat_template(story_text, return_tensors="pt")
+        else:
+            input_ids_P = tokenizer(story_text, return_tensors="pt").input_ids
 
         if input_ids_P.shape[1] >= num_tokens:
             inputs_BP.append(input_ids_P[0, :num_tokens])

@@ -5,11 +5,14 @@ import json
 import torch as th
 import matplotlib.pyplot as plt
 from umap import UMAP
+from einops import repeat
 
 from src.model_utils import load_sae, load_hf_model
 from src.exp_utils import load_tokens_of_story
 from src.configs import *
 from src.plotting_utils import savefig
+import time
+import gc
 
 
 @dataclass
@@ -19,7 +22,7 @@ class ExperimentConfig:
     env: EnvironmentConfig
     data: DatasetConfig
 
-    act_type: str
+    act_path: str
 
     # Position subsampling
     min_p: int
@@ -33,6 +36,11 @@ class ExperimentConfig:
     min_dist: float = 0.1
     metric: str = "euclidean"
     random_state: int = 42
+
+    # Plotting parameters
+    num_sequences: int | None = None  # Number of sequences to plot (None = all)
+    connect_sequences: bool = False  # Connect consecutive points within sequences
+    hover_window: int = 500  # Number of tokens to show before/after current position in hover text
 
 
 def generate_umap(
@@ -54,7 +62,7 @@ def generate_umap(
     """
     # Reshape to (batch, features)
     B, L, D = act_BLD.shape
-    X = act_BLD.reshape(B, L * D).cpu().float().numpy()
+    X = act_BLD.reshape(B * L, D).cpu().float().numpy()
 
     # Initialize and fit UMAP
     reducer = UMAP(
@@ -66,80 +74,20 @@ def generate_umap(
     )
 
     embedding = reducer.fit_transform(X)
-    return th.from_numpy(embedding)
+    embedding = th.from_numpy(embedding).reshape(B, L, -1)
+    print(embedding.shape)
+    return embedding
 
 
-def plot_umap(
-    embedding,
-    labels=None,
-    title="UMAP Projection",
-    save_path=None,
-    figsize=(10, 8),
-    s=5,
-    cmap="tab10",
-    alpha=0.6,
-):
-    """
-    Visualize UMAP embedding.
 
-    Args:
-        embedding: torch.Tensor or numpy array of shape (n_samples, 2 or 3)
-        labels: optional labels for coloring points
-        title: plot title
-        save_path: optional path to save figure
-        figsize: figure size tuple
-        s: point size
-        cmap: colormap for labels
-        alpha: point transparency
-    """
-    if isinstance(embedding, th.Tensor):
-        embedding = embedding.cpu().numpy()
-
-    fig = plt.figure(figsize=figsize)
-
-    if embedding.shape[1] == 2:
-        if labels is not None:
-            plt.scatter(embedding[:, 0], embedding[:, 1], c=labels, cmap=cmap, s=s, alpha=alpha)
-            plt.colorbar()
-        else:
-            plt.scatter(embedding[:, 0], embedding[:, 1], s=s, alpha=alpha)
-        plt.xlabel("UMAP 1")
-        plt.ylabel("UMAP 2")
-    elif embedding.shape[1] == 3:
-        ax = fig.add_subplot(111, projection="3d")
-        if labels is not None:
-            scatter = ax.scatter(
-                embedding[:, 0],
-                embedding[:, 1],
-                embedding[:, 2],
-                c=labels,
-                cmap=cmap,
-                s=s,
-                alpha=alpha,
-            )
-            plt.colorbar(scatter)
-        else:
-            ax.scatter(embedding[:, 0], embedding[:, 1], embedding[:, 2], s=s, alpha=alpha)
-        ax.set_xlabel("UMAP 1")
-        ax.set_ylabel("UMAP 2")
-        ax.set_zlabel("UMAP 3")
-
-    plt.title(title)
-
-    if save_path:
-        savefig(save_path)
-    else:
-        plt.show()
-
-    return fig
-
-
-def experiment(act_BLD, cfg: ExperimentConfig):
+def experiment(act_BLD, tokens_BL, tokenizer, cfg: ExperimentConfig):
     """
     Run UMAP dimensionality reduction and save results.
 
     Args:
         act_BLD: activations tensor of shape (batch, layers, dim)
+        tokens_BL: tokens tensor of shape (batch, seq_len)
+        tokenizer: tokenizer for decoding tokens
         cfg: experiment configuration
     """
     # Compute position indices for subsampling
@@ -159,18 +107,14 @@ def experiment(act_BLD, cfg: ExperimentConfig):
     act_BLD_subsampled = act_BLD[:, ps, :]  # (batch, num_p, dim)
 
     # Create position labels for each point
-    # Each batch sample gets all positions, so we repeat position indices
+    # Each batch sample gets all positions
     B = act_BLD_subsampled.shape[0]
-    pos_labels = ps.repeat(B)  # (batch * num_p,)
-
-    # Reshape for UMAP: treat each (batch, position) as a separate sample
-    B, L, D = act_BLD_subsampled.shape
-    act_reshaped = act_BLD_subsampled.permute(0, 1, 2).reshape(B * L, D)  # (batch*num_p, dim)
+    pos_labels = repeat(ps, 'L -> B L', B=B)  # (batch, num_p)
 
     # Generate UMAP embedding
-    print(f"Generating UMAP embedding for {act_reshaped.shape[0]} samples...")
+    print(f"Generating UMAP embedding for {act_BLD_subsampled.shape[0]} samples...")
     embedding = generate_umap(
-        act_reshaped.unsqueeze(1),  # Add dummy layer dimension for compatibility
+        act_BLD_subsampled,
         n_components=cfg.n_components,
         n_neighbors=cfg.n_neighbors,
         min_dist=cfg.min_dist,
@@ -178,17 +122,68 @@ def experiment(act_BLD, cfg: ExperimentConfig):
         random_state=cfg.random_state,
     )
 
+    # Generate hover texts with token context
+    print(f"Generating hover texts with token context...")
+    hover_texts = []
+    for b_idx in range(B):
+        # Load tokens for this story once
+        token_strs_L = load_tokens_of_story(
+            tokens_BP=tokens_BL,
+            story_idx=b_idx,
+            model_name=cfg.llm.hf_name,
+            omit_BOS_token=False,
+            seq_length=None,
+            tokenizer=tokenizer,
+        )
+
+        for l_idx_in_seq, pos_idx in enumerate(ps.tolist()):
+            # pos_idx is the actual position in the full sequence
+            # Show previous hover_window tokens + current token (bolded last)
+            start_idx = max(0, pos_idx - cfg.hover_window)
+            end_idx = min(len(token_strs_L), pos_idx + 1, cfg.max_p)
+
+            story_str = ""
+            token_count = 0
+            for i in range(start_idx, end_idx):
+                t = token_strs_L[i]
+
+                # Add linebreak every 15 tokens
+                if token_count > 0 and token_count % 15 == 0:
+                    story_str += "<br>"
+
+                if i == pos_idx:
+                    story_str += f"<b>{t}</b>"  # Bold the current token (last one)
+                else:
+                    story_str += t
+
+                token_count += 1
+
+            hover_texts.append(f"Position: {pos_idx}<br>Story: {story_str}")
+
     # Prepare results
     results = {
         "embedding": embedding.cpu().tolist(),
         "pos_labels": pos_labels.tolist(),
         "pos_indices": ps.tolist(),
+        "hover_texts": hover_texts,
         "config": asdict(cfg),
     }
 
     # Save results
     datetetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(cfg.env.results_dir, f"pred_structure_{datetetime_str}.json")
+    if cfg.act_path == "activations":
+        title_prefix = "LLM_activations"
+    elif cfg.act_path == "codes":
+        title_prefix = f"{cfg.sae.name}_codes"
+    elif cfg.act_path == "pred_codes":
+        title_prefix = f"{cfg.sae.name}_pred_codes"
+    elif cfg.act_path == "novel_codes":
+        title_prefix = f"{cfg.sae.name}_novel_codes"
+    else:
+        raise ValueError()
+
+
+    save_path = os.path.join(cfg.env.results_dir, f"pred_structure_{datetetime_str}_{title_prefix}_{cfg.llm.name}_{cfg.data.name}.json")
     with open(save_path, "w") as f:
         json.dump(results, f)
     print(f"Saved results to: {save_path}")
@@ -197,18 +192,41 @@ def experiment(act_BLD, cfg: ExperimentConfig):
 
 
 def main():
-    cfg = ExperimentConfig(
-        sae=TEMPORAL_SELFTRAIN_SAE_CFG,
-        act_type="pred_codes",
-        # sae=BATCHTOPK_SELFTRAIN_SAE_CFG,
-        # act_type="codes",
-        # sae=None,
-        # act_type="activations",
-        llm=GEMMA2_LLM_CFG,
-        env=ENV_CFG,
-        # data=WEBTEXT_DS_CFG,
-        data=CODE_DS_CFG,
-        # data=SIMPLESTORIES_DS_CFG,
+    configs = get_gemma_act_configs(
+        cfg_class=ExperimentConfig,
+        act_paths=(
+            (
+                [None],
+                [
+                    "activations",
+                    # "surrogate"
+                ],
+            ),
+            # (
+            #     GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS,
+            #     [
+            #         "codes",
+            #         # "recons"
+            #     ]
+            # ),
+            (
+                [BATCHTOPK_SELFTRAIN_SAE_CFG],
+                [
+                    # "codes",
+                    # "recons"
+                ]
+            ),
+            (
+                [TEMPORAL_SELFTRAIN_SAE_CFG],
+                [
+                    # "novel_codes",
+                    # "novel_recons",
+                    # "pred_codes",
+                    # "pred_recons",
+                    # "total_recons",
+                ],
+            ),
+        ),
         # Position subsampling
         min_p=10,
         max_p=499,
@@ -220,28 +238,49 @@ def main():
         min_dist=0.1,
         metric="euclidean",
         random_state=42,
+        # Artifacts
+        env=ENV_CFG,
+        # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        # data=WEBTEXT_DS_CFG,
+        data=CHAT_DS_CFG,
+        # data=SIMPLESTORIES_DS_CFG,
+        llm=IT_GEMMA2_LLM_CFG,
+        # llm=GEMMA2_LLM_CFG,
+        sae=None,  # set by act_paths
+        act_path=None,  # set by act_paths
     )
 
-    # Load activations
-    if cfg.sae is not None:
-        act_type = os.path.join(cfg.sae.name, cfg.act_type)
-    else:
-        act_type = cfg.act_type
+    for cfg in configs:
+        # Load activations
+        if cfg.sae is not None:
+            act_type = os.path.join(cfg.sae.name, cfg.act_path)
+        else:
+            act_type = cfg.act_path
 
-    artifacts, _ = load_matching_activations(
-        cfg,
-        [act_type],
-        cfg.env.activations_dir,
-        compared_attributes=["llm", "data"],
-        verbose=False,
-    )
-    act_BLD = artifacts[act_type]
-    act_BLD = act_BLD.to(cfg.env.device)
+        artifacts, _ = load_matching_activations(
+            cfg,
+            [act_type, "tokens"],
+            cfg.env.activations_dir,
+            compared_attributes=["llm", "data"],
+            verbose=False,
+        )
+        act_BLD = artifacts[act_type]
+        act_BLD = act_BLD.to(cfg.env.device)
+        tokens_BL = artifacts["tokens"]
 
-    print(f"==>> act_BLD.shape: {act_BLD.shape}")
+        print(f"==>> act_BLD.shape: {act_BLD.shape}")
 
-    # Run experiment
-    experiment(act_BLD, cfg)
+        # Load tokenizer
+        tokenizer = load_hf_model(cfg, tokenizer_only=True)
+
+        # Run experiment
+        experiment(act_BLD, tokens_BL, tokenizer, cfg)
+
+        # Cleanup
+        del act_BLD, tokens_BL
+        th.cuda.empty_cache()
+        gc.collect()
+        time.sleep(1)
 
 
 if __name__ == "__main__":
