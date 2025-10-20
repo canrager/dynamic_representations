@@ -61,24 +61,28 @@ def cache_surprisal_llm_activations(cfg):
     print(f"Processing {len(sentences)} surprisal sentences...")
 
     # Compute activations using loaded_sequences
-    acts_LBPD, masks_LBPD, tokens_BP = compute_llm_artifacts(
-        cfg, model, submodule, loaded_dataset_sequences=sentences
+    acts_BPD, masks_BPD, tokens_BP, attn_patterns_BHPP = compute_llm_artifacts(
+        cfg, model, submodule, loaded_dataset_sequences=sentences, cache_attn=True
     )
 
     # Apply scaling factor and move to CPU
-    acts_LBPD = cfg.scaling_factor * acts_LBPD.cpu()
-    masks_LBPD = masks_LBPD.cpu()
+    acts_BPD = cfg.scaling_factor * acts_BPD.cpu()
+    masks_BPD = masks_BPD.cpu()
     tokens_BP = tokens_BP.cpu()
 
     # Save activations, masks, and tokens
     with open(os.path.join(folder_dir, "activations.pt"), "wb") as f:
-        th.save(acts_LBPD, f, pickle_protocol=5)
+        th.save(acts_BPD, f, pickle_protocol=5)
     with open(os.path.join(folder_dir, "masks.pt"), "wb") as f:
-        th.save(masks_LBPD, f, pickle_protocol=5)
+        th.save(masks_BPD, f, pickle_protocol=5)
     with open(os.path.join(folder_dir, "tokens.pt"), "wb") as f:
         th.save(tokens_BP, f, pickle_protocol=5)
+    with open(os.path.join(folder_dir, "attn_patterns.pt"), "wb") as f:
+        th.save(attn_patterns_BHPP, f, pickle_protocol=5)
 
-    print(f"Saved surprisal activations: {acts_LBPD.shape}")
+    print(attn_patterns_BHPP.shape)
+
+    print(f"Saved surprisal activations: {acts_BPD.shape}")
 
     # Save configuration
     with open(os.path.join(folder_dir, "config.json"), "w") as f:
@@ -87,7 +91,7 @@ def cache_surprisal_llm_activations(cfg):
     print(f"Cached surprisal activations to: {folder_dir}")
 
     # Clean up
-    del acts_LBPD, masks_LBPD, tokens_BP, model, submodule
+    del acts_BPD, masks_BPD, tokens_BP, model, submodule
     th.cuda.empty_cache()
     gc.collect()
 

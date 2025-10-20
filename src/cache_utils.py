@@ -19,13 +19,14 @@ DTYPE_STR_TO_TORCH = {
     "bfloat16": th.bfloat16
 }
 
-def tokenize_from_sequences(tokenizer, sequences):
+def tokenize_from_sequences(tokenizer, sequences, max_length: int = None):
     # Tokenize a list of sequences, using all tokens, no max lenght
     tokenized = tokenizer.batch_encode_plus(
         sequences,
         padding=True,
         padding_side="right",
         truncation=True,
+        max_length=max_length,
         return_tensors="pt",
     )
     inputs_BP = tokenized["input_ids"]
@@ -149,6 +150,68 @@ def collect_from_local(tokenizer, dataset_name, num_sentences, num_tokens):
         return tokenize_with_pad_from_local(tokenizer, dataset_name, num_sentences)
 
 
+# def batch_llm_cache(
+#     model: LanguageModel,
+#     submodule: Module,
+#     inputs_BP: Tensor,
+#     masks_BP: Tensor,
+#     hidden_dim: int,
+#     batch_size: int,
+#     device: str,
+#     dtype: str,
+#     debug: bool = False,
+# ) -> Tensor:
+    
+#     dtype = DTYPE_STR_TO_TORCH[dtype]
+#     all_acts_BPD = th.zeros(
+#         (
+#             inputs_BP.shape[0],
+#             inputs_BP.shape[1],
+#             hidden_dim,
+#         ), dtype=dtype, device="cpu"
+#     )
+#     all_masks_BP = th.zeros(
+#         (
+#             inputs_BP.shape[0],
+#             inputs_BP.shape[1],
+#         ), dtype=th.int, device="cpu"
+#     )
+
+#     for batch_start in trange(
+#         0, inputs_BP.shape[0], batch_size, desc="Batched Forward"
+#     ):
+#         batch_end = batch_start + batch_size
+#         batch_input_ids = inputs_BP[batch_start:batch_end].to(device)
+#         print(f"==>> batch_input_ids.shape: {batch_input_ids.shape}")
+#         batch_mask = masks_BP[batch_start:batch_end].to(device)
+#         batch_inputs = {
+#             "input_ids": batch_input_ids,
+#             "attention_mask": batch_mask,
+#         }
+#         all_masks_BP[batch_start:batch_end] = batch_mask
+
+#         if debug:
+#             print(f"computing activations for batch {batch_start} to {batch_end}. Tokens:")
+#             for ids_P in batch_input_ids:
+#                 decoded_tokens = [model.tokenizer.decode(id, skip_special_tokens=False) for id in ids_P]
+#                 print(decoded_tokens)
+#                 print()
+            
+
+#         with th.inference_mode():
+#             with model.trace(batch_inputs, scan=False, validate=False):
+#                 out = submodule.output
+#                 if isinstance(out, tuple):
+#                     out = out[0]
+#                 out.save()
+#         all_acts_BPD[batch_start:batch_end] = out.to("cpu")
+
+#         del batch_input_ids, batch_mask, batch_inputs, out
+#         th.cuda.empty_cache()
+#         gc.collect()
+
+#     return all_acts_BPD, all_masks_BP
+
 def batch_llm_cache(
     model: LanguageModel,
     submodule: Module,
@@ -159,6 +222,8 @@ def batch_llm_cache(
     device: str,
     dtype: str,
     debug: bool = False,
+    cache_attn: bool = None,
+    num_heads: bool = None
 ) -> Tensor:
     
     dtype = DTYPE_STR_TO_TORCH[dtype]
@@ -175,6 +240,17 @@ def batch_llm_cache(
             inputs_BP.shape[1],
         ), dtype=th.int, device="cpu"
     )
+
+    all_attn_patterns_BHPP = None
+    if cache_attn:
+        all_attn_patterns_BHPP = th.zeros(
+            (
+                inputs_BP.shape[0],
+                num_heads,
+                inputs_BP.shape[1],
+                inputs_BP.shape[1],
+            ), dtype=th.int, device="cpu"
+        )
 
     for batch_start in trange(
         0, inputs_BP.shape[0], batch_size, desc="Batched Forward"
@@ -194,23 +270,30 @@ def batch_llm_cache(
                 decoded_tokens = [model.tokenizer.decode(id, skip_special_tokens=False) for id in ids_P]
                 print(decoded_tokens)
                 print()
+            
 
         with th.inference_mode():
-            with model.trace(batch_inputs, scan=False, validate=False):
+            with model.trace(batch_inputs, scan=False, validate=False, output_attentions=cache_attn):
+                if cache_attn:
+                    attn_pattern_bHPP = submodule.self_attn.output[1].save()
                 out = submodule.output
                 if isinstance(out, tuple):
                     out = out[0]
                 out.save()
         all_acts_BPD[batch_start:batch_end] = out.to("cpu")
+        if cache_attn:
+            all_attn_patterns_BHPP[batch_start:batch_end] = attn_pattern_bHPP.to("cpu")
 
         del batch_input_ids, batch_mask, batch_inputs, out
+        if cache_attn:
+            del attn_pattern_bHPP
         th.cuda.empty_cache()
         gc.collect()
 
-    return all_acts_BPD, all_masks_BP
+    return all_acts_BPD, all_masks_BP, all_attn_patterns_BHPP
 
 
-def compute_llm_artifacts(cfg, model, submodule, loaded_dataset_sequences=None):
+def compute_llm_artifacts(cfg, model, submodule, loaded_dataset_sequences=None, cache_attn=False):
     # Load dataset
     if loaded_dataset_sequences is not None:
         inputs_BP, masks_BP, _ = tokenize_from_sequences(
@@ -233,7 +316,7 @@ def compute_llm_artifacts(cfg, model, submodule, loaded_dataset_sequences=None):
         )
 
     # Call batch_act_cache
-    all_acts_LbPD, all_masks_BP = batch_llm_cache(
+    all_acts_bPD, all_masks_BP, all_attn_patterns_BHPP = batch_llm_cache(
         model=model,
         submodule=submodule,
         inputs_BP=inputs_BP,
@@ -243,9 +326,14 @@ def compute_llm_artifacts(cfg, model, submodule, loaded_dataset_sequences=None):
         device=cfg.env.device,
         dtype=cfg.env.dtype,
         debug=False,
-    )
+        cache_attn=cache_attn,
+        num_heads=model.config.num_attention_heads
+    ) # all_attn_patterns_BHPP is None if cache_attn==False
 
-    return all_acts_LbPD, all_masks_BP, inputs_BP
+    if cache_attn:
+        return all_acts_bPD, all_masks_BP, inputs_BP, all_attn_patterns_BHPP
+    else:
+        return all_acts_bPD, all_masks_BP, inputs_BP
 
 
 def batch_eleuther_sae_cache(

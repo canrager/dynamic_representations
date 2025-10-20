@@ -322,7 +322,7 @@ def plot_single_trajectory_with_tokens(results_dict: Dict[str, Dict], configs: L
     token_ids_seq = token_ids[sequence_idx]  # [num_final_tokens]
 
     # Convert token IDs to text using tokenizer
-    tokenizer = load_tokenizer(cfg.llm.hf_name, cache_dir=cfg.env.hf_cache_dir)
+    tokenizer = load_tokenizer(cfg.llm.hf_name, cfg.llm.hf_cache_dir=cfg.env.hf_cache_dir)
     final_tokens = []
     for token_id in token_ids_seq:
         if token_id >= 0:  # Valid token (not padded)

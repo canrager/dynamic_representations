@@ -158,8 +158,6 @@ def cache_sae_activations(cfg: CacheConfig):
 def main():
     cache_configs = get_configs(
         CacheConfig,
-        scaling_factor = 0.00666666667, # For gemma2-2b on monology/pile-uncopyrighted
-        # scaling_factor = 1,
         # data=DatasetConfig(
         #     # name="SimpleStories",
         #     # name="Code",
@@ -167,19 +165,25 @@ def main():
         #     hf_name="monology/pile-uncopyrighted",
         #     # hf_name="neelnanda/code-10k",
         #     # hf_name="SimpleStories/SimpleStories",
-        #     num_sequences=1000,
+        #     num_sequences=10,
         #     context_length=500,
         # ),
+        data=WEBTEXT_DS_CFG,
+        # data=SIMPLESTORIES_DS_CFG,
         # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
-        data=CHAT_DS_CFG,
+        # data=CHAT_DS_CFG,
         # data=DatasetConfig(
         #     name="Webtext",
         #     hf_name="monology/pile-uncopyrighted",
         #     num_sequences=10000,
         #     context_length=500,
         # ),
+        scaling_factor = 0.00666666667, # For gemma2-2b on monology/pile-uncopyrighted
+        # scaling_factor = 0.32421875, # For Llama 3.1 on monology/pile-uncopyrighted
+        # scaling_factor = 1,
         # llm=IT_GEMMA2_LLM_CFG,
-        llm=LLAMA3_LLM_CFG,
+        # llm=LLAMA3_LLM_CFG,
+        llm=GEMMA2_LLM_CFG,
         # llm=LLMConfig(
         #     name="Gemma-2-2B",
         #     hf_name="google/gemma-2-2b",

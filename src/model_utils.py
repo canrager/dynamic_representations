@@ -14,13 +14,23 @@ from src.custom_saes.topk_sae import load_dictionary_learning_topk_sae
 from src.configs import SAE_STR_TO_CLASS, DTYPE_STR_TO_CLASS
 
 
-def load_tokenizer(llm_name: str, cache_dir: str):
-    if "gpt2" in llm_name:
-        tokenizer = GPT2Tokenizer.from_pretrained(llm_name, cache_dir=MODELS_DIR)
+def load_tokenizer(cfg):
+    if "gpt2" in cfg.llm.hf_name:
+        tokenizer = GPT2Tokenizer.from_pretrained(cfg.llm.hf_name, cache_dir=MODELS_DIR)
         tokenizer.add_bos_token = True
         tokenizer.pad_token = tokenizer.eos_token
     else:
-        tokenizer = AutoTokenizer.from_pretrained(llm_name, cache_dir=cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(cfg.llm.hf_name, cache_dir=cfg.env.hf_cache_dir)
+
+    return tokenizer
+
+def load_tokenizer(llm_hf_name, hf_cache_dir):
+    if "gpt2" in llm_hf_name:
+        tokenizer = GPT2Tokenizer.from_pretrained(llm_hf_name, cache_dir=MODELS_DIR)
+        tokenizer.add_bos_token = True
+        tokenizer.pad_token = tokenizer.eos_token
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(llm_hf_name, cache_dir=hf_cache_dir)
 
     return tokenizer
 
@@ -33,6 +43,7 @@ def load_nnsight_model(cfg):
         device_map=cfg.env.device,  # Use the defined device
         torch_dtype=cfg.env.dtype,
         dispatch=True,
+        attn_implementation="eager",
     )
 
     if "gpt2" in cfg.llm.name:
@@ -42,12 +53,13 @@ def load_nnsight_model(cfg):
         submodule = model.transformer.h[cfg.llm.layer_idx]
 
         # Language Model loads the AutoTokenizer, which does not use the add_bos_token method.
-        model.tokenizer = load_tokenizer(cfg.llm.name, cache_dir=MODELS_DIR)
+        model.tokenizer = load_tokenizer(cfg)
 
     elif any([s in cfg.llm.name.lower() for s in ["llama", "gemma", "allenai", "qwen", "mistral"]]):
         print(model)
         print(model.config)
         hidden_dim = model.config.hidden_size
+        # num_heads = model.config.num_attention_heads
         submodule = model.model.layers[cfg.llm.layer_idx]
     else:
         raise ValueError("Unknown model")

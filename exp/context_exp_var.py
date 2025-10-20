@@ -47,46 +47,14 @@ def get_window_indices(cfg: PCAExpVarConfig, window_size=int):
         # Linear steps from smallest we to largest we, first and las indices of wes should be those
         wes = th.linspace(smallest_we, largest_we, cfg.num_windows, dtype=th.int)
 
-    B = cfg.min_total_tokens_per_window // window_size + 1  # num sequences per token
+    B = min(cfg.data.num_sequences, 500) #// window_size
+    batch_indices_WBP = einops.repeat(th.arange(B), "B -> W B P", W=cfg.num_windows, P=window_size)
 
     pos_indices_WBP = th.zeros(cfg.num_windows, B, window_size, dtype=th.int, device="cpu")
     for i, we in enumerate(wes):
         pos_indices_WBP[i, :] = th.arange(we + 1 - window_size, we + 1, dtype=th.int, device="cpu")
 
-    batch_indices_WBP = th.ones_like(pos_indices_WBP) * th.arange(B)[None, :, None]
-
     return batch_indices_WBP, pos_indices_WBP, wes, B
-
-
-def pca_var_explained(train_act_BPD, next_token_act_BD, cfg: PCAExpVarConfig):
-
-    # Compute PCA Basis
-    act_ND = train_act_BPD.flatten(0, 1)
-    act_ND = act_ND.to(cfg.env.device)
-    mean_act_D = th.mean(act_ND, dim=0)
-    centered_act_ND = act_ND - mean_act_D
-    next_token_act_BD = next_token_act_BD.to(cfg.env.device)
-    U, S, Vt = th.linalg.svd(centered_act_ND.float(), full_matrices=False)
-
-    # Only keep components explaining <= cfg.reconstruction_thresh energy
-    S2 = S**2
-    S_normalized = S2 / S2.sum()
-    components_mask = th.cumsum(S_normalized, dim=0) < cfg.reconstruction_thresh
-    num_pca_components = components_mask.sum()
-    Vt_CD = Vt[components_mask].to(dtype=act_ND.dtype)
-
-    # Report the frac_variance_explained
-    total_eval_var_D = th.var(next_token_act_BD, dim=0)
-    pca_eval_act_BC = th.matmul(Vt_CD, next_token_act_BD.T).T
-    pca_eval_var_D = th.var(pca_eval_act_BC, dim=0)
-    frac_var_exp = pca_eval_var_D.sum() / total_eval_var_D.sum()
-
-    # Baseline: Report frac variance explained by projecting next_token_act on to the mean of the prior window.
-    # baseline_act_BD = ((next_token_act_BD / next_token_act_BD.norm(dim=-1, keepdim=True)) @ (mean_act_D / mean_act_D.norm(dim=-1, keepdim=True)))[:, None] * next_token_act_BD
-    # baseline_var_D = th.var(baseline_act_BD, dim=0)
-    # baseline_frac_var_exp = baseline_var_D.sum() / total_eval_var_D.sum()
-
-    return frac_var_exp.cpu(), num_pca_components.cpu()  # , baseline_frac_var_exp.cpu()
 
 
 def context_var_explained(context_act_BpD, y_act_BD, cfg: PCAExpVarConfig):
@@ -120,62 +88,41 @@ def context_var_explained(context_act_BpD, y_act_BD, cfg: PCAExpVarConfig):
         V_Dp = Vt_pD[:rank].T
         reconstructed_y_BD[b] = V_Dp @ (V_Dp.T @ y_D)
 
-    # y_centered_BD = y_act_BD - y_mean_D
-    # recon_centered_BD = reconstructed_y_BD - y_mean_D
-    frac_var_exp = (reconstructed_y_BD**2).sum() / (y_act_BD**2).sum()
+    frac_var_exp = th.var(reconstructed_y_BD, dim=0).sum() / th.var(y_act_BD, dim=0).sum()
 
     mean_rank = mean_rank_B.mean()
 
     return frac_var_exp.cpu(), mean_rank.cpu()
 
 
-def prev_token_baseline(cur_token_act_BD, next_token_act_BD):
-    # Baseline of projecting the next token onto the window of the previous token.
-    normalized_cur_BD = cur_token_act_BD / cur_token_act_BD.norm(dim=-1, keepdim=True)
-    normalized_next_BD = next_token_act_BD / next_token_act_BD.norm(dim=-1, keepdim=True)
-    cosine_sim_B = einops.einsum(normalized_next_BD, normalized_cur_BD, "B D, B D -> B")
-    baseline_act_BD = cosine_sim_B[:, None] * next_token_act_BD
-    baseline_var_D = th.var(baseline_act_BD, dim=0)
-    total_next_token_var_D = th.var(next_token_act_BD, dim=0)
-    baseline_frac_var_exp = baseline_var_D.sum() / total_next_token_var_D.sum()
-    return baseline_frac_var_exp
-
-
 def single_pca_experiment(cfg: PCAExpVarConfig, acts_BPD: th.Tensor):
     assert cfg.selected_context_length > max(cfg.window_sizes)
-    # assert (
-    #     cfg.min_total_tokens_per_window >= cfg.llm.hidden_dim
-    # ), "PCA requires at least hidden_dim datapoints."
 
     results = {}
     for window_size in tqdm(cfg.window_sizes, desc="Window size"):
-        batch_indices_WBP, pos_indices_WBP, wes, B = get_window_indices(cfg, window_size)
-        train_act_WbpD = acts_BPD[batch_indices_WBP, pos_indices_WBP, :]
-
         dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
         fve = th.zeros(cfg.num_windows, dtype=dtype)
         ncomp = th.zeros(cfg.num_windows, dtype=dtype)
-        baseline = th.zeros(cfg.num_windows, dtype=dtype)
+        batch_indices_WBP, pos_indices_WBP, wes, B = get_window_indices(cfg, window_size)
 
         for window_idx in trange(cfg.num_windows):
-            train_act_bpD = train_act_WbpD[window_idx]
-            batch_indices_B = batch_indices_WBP[window_idx, :, 0]
-            # eval_act_BD = acts_BPD[batch_indices_B, wes[window_idx] + 1] # +1 since we're evaluating the next token
-            # cur_act_BD = acts_BPD[batch_indices_B, wes[window_idx]]
-            eval_act_BD = acts_BPD[:, wes[window_idx] + 1] # +1 since we're evaluating the next token
-            cur_act_BD = acts_BPD[:, wes[window_idx]]
+            batch_indices_BP = batch_indices_WBP[window_idx]
+            pos_indices_BP = pos_indices_WBP[window_idx]
+            train_act_BpD = acts_BPD[batch_indices_BP, pos_indices_BP]
+            eval_act_BD = acts_BPD[
+                :, wes[window_idx] + 1
+            ]  # +1 since we're evaluating the next token
+
             frac_var_exp, num_pca_components = context_var_explained(
-                train_act_bpD, eval_act_BD, cfg
+                train_act_BpD, eval_act_BD, cfg
             )
             fve[window_idx] = frac_var_exp
             ncomp[window_idx] = num_pca_components
-            baseline[window_idx] = prev_token_baseline(cur_act_BD, eval_act_BD)
 
         results[window_size] = dict(
             window_end_pos=wes.cpu().tolist(),
             frac_var_exp=fve.cpu().tolist(),
             num_pca_components=ncomp.cpu().tolist(),
-            baseline_frac_var_exp=baseline.cpu().tolist(),
             num_seq_per_token=B,
         )
 
@@ -196,10 +143,11 @@ def single_pca_experiment(cfg: PCAExpVarConfig, acts_BPD: th.Tensor):
 def main():
     configs = get_gemma_act_configs(
         cfg_class=PCAExpVarConfig,
-        window_sizes=[[1, 3, 10, 32, 100, 316]],
-        min_total_tokens_per_window=9999,
+        window_sizes=[[100]],
+        # window_sizes=[[1, 3, 10, 32, 100, 316]],
         selected_context_length=500,
-        num_windows=50,
+        # num_windows=50,
+        num_windows=5,
         do_log_spacing=False,
         smallest_window_start=2,
         reconstruction_thresh=0.9,
@@ -211,6 +159,7 @@ def main():
             num_sequences=1000,
             context_length=500,
         ),
+        # llm=LLAMA3_LLM_CFG,
         llm=GEMMA2_LLM_CFG,
         sae=None,
         act_paths=(
@@ -249,7 +198,11 @@ def main():
             act_path = os.path.join(cfg.sae.name, cfg.act_path)
 
         artifacts, _ = load_matching_activations(
-            cfg, [act_path], cfg.env.activations_dir, compared_attributes=["llm", "data"]
+            cfg,
+            [act_path],
+            cfg.env.activations_dir,
+            compared_attributes=["llm", "data"],
+            verbose=True,
         )
         for key in artifacts:
             acts_BPD = artifacts[key]

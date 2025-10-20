@@ -84,7 +84,7 @@ if __name__ == "__main__":
         streaming=True,
     )["train"]
 
-    tokenizer = load_tokenizer("gpt2", cache_dir=MODELS_DIR)
+    tokenizer = load_tokenizer("gpt2", cfg.llm.hf_cache_dir=MODELS_DIR)
     story_idxs, inputs_BP = collect_long_sentences(
         tokenizer, hf_dataset, num_sentences, num_tokens
     )

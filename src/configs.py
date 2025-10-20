@@ -144,7 +144,7 @@ SAE_STR_TO_CLASS = {
     "relu": AutoEncoder,
     "jump_relu": JumpReluAutoEncoder,
     "temporal": TemporalSAE,
-    "standard": SAEStandard
+    "standard": SAEStandard,
 }
 
 TOPK_DL_GEMMA2_SAE_CFG = SAEConfig(
@@ -710,45 +710,48 @@ def load_matching_activations(
 
     for filetype in target_filenames:
         path = os.path.join(target_dir, f"{filetype}.pt")
-        
+
         with open(path, "rb") as f:
             artifacts[filetype] = th.load(f, weights_only=False)
     return artifacts, target_dir
 
 
 def load_matching_results(
-    exp_name: str, 
-    source_cfg: Any, 
-    target_folder: str, 
-    recency_rank: int, 
+    exp_name: str,
+    source_cfg: Any,
+    target_folder: str,
+    recency_rank: int,
     compared_attributes: List[str],
     verbose,
 ):
     # Get all .json filenames in target folder
-    json_files = [f for f in os.listdir(target_folder) if f.endswith('.json')]
+    json_files = [f for f in os.listdir(target_folder) if f.endswith(".json")]
 
     # Filter by exp_name in filename
     filtered_files = [f for f in json_files if f.startswith(exp_name)]
 
     # Load filtered results
-    loaded_results = []
+    matching_results = []
     for filename in filtered_files:
         filepath = os.path.join(target_folder, filename)
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             result = json.load(f)
-            result['_filename'] = filename
-            loaded_results.append(result)
+            result["_filename"] = filename
 
-    # Filter by matching config in compared attributes
-    matching_results = []
-    for result in loaded_results:
-        if check_dataclass_dict_overlap(
-            source_cfg, result["config"], verbose=verbose, compared_attributes=compared_attributes,
-        ):
-            matching_results.append(result)
+            # Filter by matching config in compared attributes
+            if check_dataclass_dict_overlap(
+                source_cfg,
+                result["config"],
+                verbose=verbose,
+                compared_attributes=compared_attributes,
+                path=filepath,
+            ):
+                matching_results.append(result)
 
     # Sort by recency (assuming filename contains timestamp or creation time)
-    matching_results.sort(key=lambda x: os.path.getctime(os.path.join(target_folder, x['_filename'])), reverse=True)
+    matching_results.sort(
+        key=lambda x: os.path.getctime(os.path.join(target_folder, x["_filename"])), reverse=True
+    )
 
     # Return result with selected recency as dict
     if len(matching_results) > recency_rank:
@@ -761,22 +764,24 @@ def load_matching_results(
             print(f"No result found at recency rank {recency_rank}")
         return None
 
+
 def load_results_multiple_configs(
-    exp_name: str, 
-    source_cfgs: List[Any], 
-    target_folder: str, 
-    recency_rank: int, 
+    exp_name: str,
+    source_cfgs: List[Any],
+    target_folder: str,
+    recency_rank: int,
     compared_attributes: List[str],
     verbose: bool,
 ):
     results = {}
     for cfg in source_cfgs:
-        result = load_matching_results(exp_name, cfg, target_folder, recency_rank, compared_attributes, verbose)
+        result = load_matching_results(
+            exp_name, cfg, target_folder, recency_rank, compared_attributes, verbose
+        )
         results[result["_filename"]] = result
 
     return results
 
-    
 
 def load_llm_activations(cfg, recency_rank=0, return_target_dir=False):
     """Wrapper for load_matching_artifacts specifically for loading llm activations."""

@@ -79,7 +79,6 @@ def generate_umap(
     return embedding
 
 
-
 def experiment(act_BLD, tokens_BL, tokenizer, cfg: ExperimentConfig):
     """
     Run UMAP dimensionality reduction and save results.
@@ -109,7 +108,7 @@ def experiment(act_BLD, tokens_BL, tokenizer, cfg: ExperimentConfig):
     # Create position labels for each point
     # Each batch sample gets all positions
     B = act_BLD_subsampled.shape[0]
-    pos_labels = repeat(ps, 'L -> B L', B=B)  # (batch, num_p)
+    pos_labels = repeat(ps, "L -> B L", B=B)  # (batch, num_p)
 
     # Generate UMAP embedding
     print(f"Generating UMAP embedding for {act_BLD_subsampled.shape[0]} samples...")
@@ -182,8 +181,10 @@ def experiment(act_BLD, tokens_BL, tokenizer, cfg: ExperimentConfig):
     else:
         raise ValueError()
 
-
-    save_path = os.path.join(cfg.env.results_dir, f"pred_structure_{datetetime_str}_{title_prefix}_{cfg.llm.name}_{cfg.data.name}.json")
+    save_path = os.path.join(
+        cfg.env.results_dir,
+        f"pred_structure_{datetetime_str}_{title_prefix}_{cfg.llm.name}_{cfg.data.name}.json",
+    )
     with open(save_path, "w") as f:
         json.dump(results, f)
     print(f"Saved results to: {save_path}")
@@ -212,28 +213,28 @@ def main():
             (
                 [BATCHTOPK_SELFTRAIN_SAE_CFG],
                 [
-                    # "codes",
+                    "codes",
                     # "recons"
-                ]
+                ],
             ),
             (
                 [TEMPORAL_SELFTRAIN_SAE_CFG],
                 [
                     # "novel_codes",
                     # "novel_recons",
-                    # "pred_codes",
+                    "pred_codes",
                     # "pred_recons",
                     # "total_recons",
                 ],
             ),
         ),
         # Position subsampling
-        min_p=10,
+        min_p=0,
         max_p=499,
-        num_p=20,
+        num_p=499,
         do_log_scale=False,
         # UMAP parameters
-        n_components=3,
+        n_components=2,
         n_neighbors=15,
         min_dist=0.1,
         metric="euclidean",
@@ -242,10 +243,17 @@ def main():
         env=ENV_CFG,
         # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
         # data=WEBTEXT_DS_CFG,
-        data=CHAT_DS_CFG,
-        # data=SIMPLESTORIES_DS_CFG,
-        llm=IT_GEMMA2_LLM_CFG,
-        # llm=GEMMA2_LLM_CFG,
+        # data=DatasetConfig(
+        #     name="Twist",
+        #     hf_name="twist.json",
+        #     num_sequences=1,  # Total number of sentences in JSON
+        #     context_length=500,  # Use variable length with padding
+        # ),
+        # data=CHAT_DS_CFG,
+        data=SIMPLESTORIES_DS_CFG,
+        # llm=IT_GEMMA2_LLM_CFG,
+        llm=GEMMA2_LLM_CFG,
+        # llm=LLAMA3_LLM_CFG,
         sae=None,  # set by act_paths
         act_path=None,  # set by act_paths
     )
