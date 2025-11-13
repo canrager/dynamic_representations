@@ -95,6 +95,7 @@ def compute_phase_randomized_surrogate(X_BPD: th.Tensor) -> th.Tensor:
             X_sur[b, :, d] = th.from_numpy(x_new).to(X_BPD)
     return X_sur
 
+
 def cache_surrogate_activations(cfg: CacheConfig):
     act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
     surrogate_BPD = compute_phase_randomized_surrogate(act_BPD)
@@ -104,13 +105,14 @@ def cache_surrogate_activations(cfg: CacheConfig):
 
     print(f"Cached surrogate to: {save_dir}")
 
+
 def cache_dictionarylearning_sae_activations(cfg: CacheConfig):
     llm_act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
     save_dir = os.path.join(save_dir, cfg.sae.name)
 
     # Check whether precomputed acts for this sae already exists
     if os.path.isdir(save_dir):
-        print(f'Cached activations already exist in {save_dir}. Skipping activation cache.')
+        print(f"Cached activations already exist in {save_dir}. Skipping activation cache.")
         return
     else:
         os.makedirs(save_dir)
@@ -131,13 +133,13 @@ def cache_dictionarylearning_sae_activations(cfg: CacheConfig):
     gc.collect()
 
 
-def cache_selftrain_sae_activations(cfg: CacheConfig):
+def cache_singh_sae_activations(cfg: CacheConfig):
     llm_act_BPD, save_dir = load_llm_activations(cfg, return_target_dir=True)
     save_dir = os.path.join(save_dir, cfg.sae.name)
 
     os.makedirs(save_dir, exist_ok=True)
 
-    print(F"caching activations for {cfg.sae.name}")
+    print(f"caching activations for {cfg.sae.name}")
     sae = load_sae(cfg)
     results_dict = batch_sae_cache(sae, llm_act_BPD, cfg)
 
@@ -149,11 +151,15 @@ def cache_selftrain_sae_activations(cfg: CacheConfig):
     th.cuda.empty_cache()
     gc.collect()
 
+
 def cache_sae_activations(cfg: CacheConfig):
-    if "selftrain" in cfg.sae.local_weights_path:
-        cache_selftrain_sae_activations(cfg)
-    else:
+    if cfg.sae.release == "singh":
+        cache_singh_sae_activations(cfg)
+    elif cfg.sae.release == "saebench":
         cache_dictionarylearning_sae_activations(cfg)
+    else:
+        raise ValueError("unknown SAE release.")
+
 
 def main():
     cache_configs = get_configs(
@@ -168,29 +174,37 @@ def main():
         #     num_sequences=10,
         #     context_length=500,
         # ),
-        data=WEBTEXT_DS_CFG,
+        # data=WEBTEXT_DS_CFG,
         # data=SIMPLESTORIES_DS_CFG,
-        # data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
-        # data=CHAT_DS_CFG,
+        data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
+        # data=CODE_DS_CFG,
+        # data=ALPACA_DS_CFG,
         # data=DatasetConfig(
         #     name="Webtext",
         #     hf_name="monology/pile-uncopyrighted",
-        #     num_sequences=10000,
-        #     context_length=500,
+        #     num_sequences=100,
+        #     context_length=8192,
         # ),
-        scaling_factor = 0.00666666667, # For gemma2-2b on monology/pile-uncopyrighted
+        scaling_factor=0.00666666667,  # For gemma2-2b on monology/pile-uncopyrighted
         # scaling_factor = 0.32421875, # For Llama 3.1 on monology/pile-uncopyrighted
         # scaling_factor = 1,
         # llm=IT_GEMMA2_LLM_CFG,
-        # llm=LLAMA3_LLM_CFG,
         llm=GEMMA2_LLM_CFG,
+        # llm=LLMConfig(
+        #     name="Llama-3.1-8B",
+        #     hf_name="meta-llama/Llama-3.1-8B",
+        #     revision=None,
+        #     layer_idx=15,
+        #     hidden_dim=4096,
+        #     batch_size=1,
+        # ),
         # llm=LLMConfig(
         #     name="Gemma-2-2B",
         #     hf_name="google/gemma-2-2b",
         #     revision=None,
         #     layer_idx=12,
         #     hidden_dim=2304,
-        #     batch_size=50,
+        #     batch_size=1,
         # ),
         # llm=LLMConfig(
         #     name="Llama-3.1-8B",
@@ -200,14 +214,22 @@ def main():
         #     hidden_dim=4096,
         #     batch_size=10,
         # ),
-        # sae=TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG,
+        # sae=GEMMA2_RELU_SAE_CFG,
         # sae=MP_SELFTRAIN_SAE_CFG,
         # sae=GEMMA2_SELFTRAIN_SAE_CFGS,
         # sae=[None] + GEMMA2_SELFTRAIN_SAE_CFGS,
         # sae=GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS,
         # sae=[TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG],
-        sae=None,
-        # sae=[None, TEMPORAL_SELFTRAIN_SAE_CFG, BATCHTOPK_SELFTRAIN_SAE_CFG],
+        # sae=None,
+        # sae=[None] + LLAMA3_L16_SAE_CFGS,
+        sae=[
+            # None,
+            # GEMMA2_BATCHTOPK_SAE_CFG,
+            # GEMMA2_TOPK_SAE_CFG,
+            # GEMMA2_RELU_SAE_CFG,
+            # GEMMA2_TEMPORAL_SAE_CFG,
+            GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG
+        ],
         env=ENV_CFG,
     )
 

@@ -52,11 +52,20 @@ class LLMConfig:
     batch_size: int
 
 
-LLAMA3_LLM_CFG = LLMConfig(
+LLAMA3_L15_LLM_CFG = LLMConfig(
     name="Llama-3.1-8B",
     hf_name="meta-llama/Llama-3.1-8B",
     revision=None,
-    layer_idx=12,
+    layer_idx=15,
+    hidden_dim=4096,
+    batch_size=10,
+)
+
+LLAMA3_L26_LLM_CFG = LLMConfig(
+    name="Llama-3.1-8B",
+    hf_name="meta-llama/Llama-3.1-8B",
+    revision=None,
+    layer_idx=26,
     hidden_dim=4096,
     batch_size=10,
 )
@@ -94,7 +103,14 @@ class DatasetConfig:
 WEBTEXT_DS_CFG = DatasetConfig(
     name="Webtext",
     hf_name="monology/pile-uncopyrighted",
-    num_sequences=1000,
+    num_sequences=1000, 
+    context_length=500,
+)
+
+WEBTEXT_SMALL_DS_CFG = DatasetConfig(
+    name="Webtext",
+    hf_name="monology/pile-uncopyrighted",
+    num_sequences=10,
     context_length=500,
 )
 
@@ -104,11 +120,24 @@ CHAT_DS_CFG = DatasetConfig(
     num_sequences=1000,
     context_length=500,
 )
+ALPACA_DS_CFG = DatasetConfig(
+    name="Alpaca",
+    hf_name="tatsu-lab/alpaca",
+    num_sequences=1000,
+    context_length=50,
+)
 
 SIMPLESTORIES_DS_CFG = DatasetConfig(
     name="SimpleStories",
     hf_name="SimpleStories/SimpleStories",
     num_sequences=1000,
+    context_length=500,
+)
+
+SIMPLESTORIES_SMALL_DS_CFG = DatasetConfig(
+    name="SimpleStories",
+    hf_name="SimpleStories/SimpleStories",
+    num_sequences=10,
     context_length=500,
 )
 
@@ -131,6 +160,7 @@ TWIST_DS_CFG = DatasetConfig(
 
 @dataclass
 class SAEConfig:
+    release: str
     name: str
     local_weights_path: str
     dict_class: Any
@@ -147,287 +177,315 @@ SAE_STR_TO_CLASS = {
     "standard": SAEStandard,
 }
 
-TOPK_DL_GEMMA2_SAE_CFG = SAEConfig(
-    name="top_k",
-    local_weights_path="artifacts/trained_saes/gemma2/top_k",
-    dict_class="top_k",
-    dict_size=4096,
-    batch_size=100,
-)
-BTOPK_DL_GEMMA2_SAE_CFG = SAEConfig(
-    name="batch_top_k",
-    local_weights_path="artifacts/trained_saes/gemma2/batch_top_k",
-    dict_class="batch_top_k",
-    dict_size=4096,
-    batch_size=100,
-)
-RELU_DL_GEMMA2_SAE_CFG = SAEConfig(
+# Gemma-2-2B SAE configs (layer 12)
+GEMMA2_RELU_SAE_CFG = SAEConfig(
+    release="singh",
     name="relu",
-    local_weights_path="artifacts/trained_saes/gemma2/relu",
-    dict_class="relu",
-    dict_size=4096,
-    batch_size=100,
-)
-JUMPRELU_DL_GEMMA2_SAE_CFG = SAEConfig(
-    name="jump_relu",
-    local_weights_path="artifacts/trained_saes/gemma2/jump_relu",
-    dict_class="jump_relu",
-    dict_size=4096,
-    batch_size=100,
-)
-
-TEMPORAL_GEMMA2_SAE_CFG = SAEConfig(
-    name="temporal_llxloq3x",
-    local_weights_path="artifacts/trained_saes/temporal_gemma2/llxloq3x",
-    dict_class="temporal",
-    dict_size=8192,
-    batch_size=100,
-)
-
-GEMMA2_DL_SAE_CFGS = [
-    RELU_DL_GEMMA2_SAE_CFG,
-    JUMPRELU_DL_GEMMA2_SAE_CFG,
-    TOPK_DL_GEMMA2_SAE_CFG,
-    BTOPK_DL_GEMMA2_SAE_CFG,
-]
-
-
-# Selftrain SAE configs
-RELU_SELFTRAIN_SAE_CFG = SAEConfig(
-    name="relu",
-    local_weights_path="artifacts/trained_saes/selftrain/relu",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/relu",
     dict_class="standard",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-RELU_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_RELU_2X_DENSER_SAE_CFG = SAEConfig(
+    release="singh",
     name="relu_2x_denser",
-    local_weights_path="artifacts/trained_saes/selftrain/relu_2x_denser",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/relu_2x_denser",
     dict_class="standard",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-RELU_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_RELU_2X_WIDER_SAE_CFG = SAEConfig(
+    release="singh",
     name="relu_2x_wider",
-    local_weights_path="artifacts/trained_saes/selftrain/relu_2x_wider",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/relu_2x_wider",
     dict_class="standard",
-    dict_size=18432,  # 2304 * 8 (exp_factor)
+    dict_size=18432,
     batch_size=10,
 )
 
-TOPK_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TOPK_SAE_CFG = SAEConfig(
+    release="singh",
     name="topk",
-    local_weights_path="artifacts/trained_saes/selftrain/topk",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/topk",
     dict_class="standard",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TOPK_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TOPK_2X_DENSER_SAE_CFG = SAEConfig(
+    release="singh",
     name="topk_2x_denser",
-    local_weights_path="artifacts/trained_saes/selftrain/topk_2x_denser",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/topk_2x_denser",
     dict_class="standard",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TOPK_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TOPK_2X_WIDER_SAE_CFG = SAEConfig(
+    release="singh",
     name="topk_2x_wider",
-    local_weights_path="artifacts/trained_saes/selftrain/topk_2x_wider",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/topk_2x_wider",
     dict_class="standard",
-    dict_size=18432,  # 2304 * 8 (exp_factor)
+    dict_size=18432,
     batch_size=10,
 )
 
-BATCHTOPK_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_BATCHTOPK_SAE_CFG = SAEConfig(
+    release="singh",
     name="batchtopk",
-    local_weights_path="artifacts/trained_saes/selftrain/batchtopk",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/batchtopk",
     dict_class="standard",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-BATCHTOPK_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_BATCHTOPK_2X_DENSER_SAE_CFG = SAEConfig(
+    release="singh",
     name="batchtopk_2x_denser",
-    local_weights_path="artifacts/trained_saes/selftrain/batchtopk_2x_denser",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/batchtopk_2x_denser",
     dict_class="standard",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-BATCHTOPK_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_BATCHTOPK_2X_WIDER_SAE_CFG = SAEConfig(
+    release="singh",
     name="batchtopk_2x_wider",
-    local_weights_path="artifacts/trained_saes/selftrain/batchtopk_2x_wider",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/batchtopk_2x_wider",
     dict_class="standard",
-    dict_size=18432,  # 2304 * 8 (exp_factor)
+    dict_size=18432,
     batch_size=10,
 )
 
-MP_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_MP_SAE_CFG = SAEConfig(
+    release="singh",
     name="mp",
-    local_weights_path="artifacts/trained_saes/selftrain/mp",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/mp",
     dict_class="standard",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_2X_DENSER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_2X_DENSER_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_2x_denser",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_2x_denser",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_2x_denser",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_2X_WIDER_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_2X_WIDER_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_2x_wider",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_2x_wider",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_2x_wider",
     dict_class="temporal",
-    dict_size=18432,  # 2304 * 8 (exp_factor)
+    dict_size=18432,
     batch_size=10,
 )
 
-TEMPORAL_2X_LAYERS_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_2X_LAYERS_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_2x_layers",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_2x_layers",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_2x_layers",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_4X_HEADS_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_4x_heads",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_4x_heads",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_4x_heads",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_RANK_1_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_RANK_1_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_rank_1",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_rank_1",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_rank_1",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_RANK_2_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_RANK_2_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_rank_2",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_rank_2",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_rank_2",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_RANK_1_LAYERS_2_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_RANK_1_LAYERS_2_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_rank_1_layers_2",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_rank_1_layers_2",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_rank_1_layers_2",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-TEMPORAL_PRED_ONLY_SELFTRAIN_SAE_CFG = SAEConfig(
+GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG = SAEConfig(
+    release="singh",
     name="temporal_pred_only",
-    local_weights_path="artifacts/trained_saes/selftrain/temporal_pred_only",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_pred_only",
     dict_class="temporal",
-    dict_size=9216,  # 2304 * 4 (exp_factor)
+    dict_size=9216,
     batch_size=10,
 )
 
-GEMMA2_SELFTRAIN_SAE_CFGS = [
-    RELU_SELFTRAIN_SAE_CFG,
-    # RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
-    # RELU_2X_WIDER_SELFTRAIN_SAE_CFG,
-    TOPK_SELFTRAIN_SAE_CFG,
-    # TOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
-    # TOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
-    BATCHTOPK_SELFTRAIN_SAE_CFG,
-    BATCHTOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
-    BATCHTOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
-    MP_SELFTRAIN_SAE_CFG,
-    TEMPORAL_SELFTRAIN_SAE_CFG,
-    TEMPORAL_2X_DENSER_SELFTRAIN_SAE_CFG,
-    TEMPORAL_2X_WIDER_SELFTRAIN_SAE_CFG,
-    TEMPORAL_2X_LAYERS_SELFTRAIN_SAE_CFG,
-    TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_RANK_1_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_RANK_2_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_RANK_1_LAYERS_2_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_PRED_ONLY_SELFTRAIN_SAE_CFG,
+GEMMA2_SAE_CFGS = [
+    GEMMA2_RELU_SAE_CFG,
+    GEMMA2_RELU_2X_DENSER_SAE_CFG,
+    GEMMA2_RELU_2X_WIDER_SAE_CFG,
+    GEMMA2_TOPK_SAE_CFG,
+    GEMMA2_TOPK_2X_DENSER_SAE_CFG,
+    GEMMA2_TOPK_2X_WIDER_SAE_CFG,
+    GEMMA2_BATCHTOPK_SAE_CFG,
+    GEMMA2_BATCHTOPK_2X_DENSER_SAE_CFG,
+    GEMMA2_BATCHTOPK_2X_WIDER_SAE_CFG,
+    GEMMA2_MP_SAE_CFG,
+    GEMMA2_TEMPORAL_SAE_CFG,
+    GEMMA2_TEMPORAL_2X_DENSER_SAE_CFG,
+    GEMMA2_TEMPORAL_2X_WIDER_SAE_CFG,
+    GEMMA2_TEMPORAL_2X_LAYERS_SAE_CFG,
+    GEMMA2_TEMPORAL_4X_HEADS_SAE_CFG,
+    GEMMA2_TEMPORAL_RANK_1_SAE_CFG,
+    GEMMA2_TEMPORAL_RANK_2_SAE_CFG,
+    GEMMA2_TEMPORAL_RANK_1_LAYERS_2_SAE_CFG,
+    GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG,
 ]
 
-GEMMA2_STANDARD_SELFTRAIN_SAE_CFGS = [
-    RELU_SELFTRAIN_SAE_CFG,
-    # RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
-    # RELU_2X_WIDER_SELFTRAIN_SAE_CFG,
-    TOPK_SELFTRAIN_SAE_CFG,
-    # TOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
-    # TOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
-    BATCHTOPK_SELFTRAIN_SAE_CFG,
-    # BATCHTOPK_2X_DENSER_SELFTRAIN_SAE_CFG,
-    # BATCHTOPK_2X_WIDER_SELFTRAIN_SAE_CFG,
-    MP_SELFTRAIN_SAE_CFG,
+GEMMA2_STANDARD_SAE_CFGS = [
+    GEMMA2_RELU_SAE_CFG,
+    GEMMA2_RELU_2X_DENSER_SAE_CFG,
+    GEMMA2_RELU_2X_WIDER_SAE_CFG,
+    GEMMA2_TOPK_SAE_CFG,
+    GEMMA2_TOPK_2X_DENSER_SAE_CFG,
+    GEMMA2_TOPK_2X_WIDER_SAE_CFG,
+    GEMMA2_BATCHTOPK_SAE_CFG,
+    GEMMA2_BATCHTOPK_2X_DENSER_SAE_CFG,
+    GEMMA2_BATCHTOPK_2X_WIDER_SAE_CFG,
+    GEMMA2_MP_SAE_CFG,
 ]
 
-GEMMA2_TEMPORAL_SELFTRAIN_SAE_CFGS = [
-    TEMPORAL_SELFTRAIN_SAE_CFG,
-    TEMPORAL_2X_DENSER_SELFTRAIN_SAE_CFG,
-    TEMPORAL_2X_WIDER_SELFTRAIN_SAE_CFG,
-    TEMPORAL_2X_LAYERS_SELFTRAIN_SAE_CFG,
-    TEMPORAL_4X_HEADS_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_RANK_1_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_RANK_2_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_RANK_1_LAYERS_2_SELFTRAIN_SAE_CFG,
-    # TEMPORAL_PRED_ONLY_SELFTRAIN_SAE_CFG,
+GEMMA2_TEMPORAL_SAE_CFGS = [
+    GEMMA2_TEMPORAL_SAE_CFG,
+    GEMMA2_TEMPORAL_2X_DENSER_SAE_CFG,
+    GEMMA2_TEMPORAL_2X_WIDER_SAE_CFG,
+    GEMMA2_TEMPORAL_2X_LAYERS_SAE_CFG,
+    GEMMA2_TEMPORAL_4X_HEADS_SAE_CFG,
+    GEMMA2_TEMPORAL_RANK_1_SAE_CFG,
+    GEMMA2_TEMPORAL_RANK_2_SAE_CFG,
+    GEMMA2_TEMPORAL_RANK_1_LAYERS_2_SAE_CFG,
+    GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG,
 ]
 
 
-TOPK_LLAMA3_SAE_CFG = SAEConfig(
-    name="Top K",
-    local_weights_path="artifacts/trained_saes/llama3/top_k",
-    dict_class="top_k",
+# Llama-3.1-8B SAE configs (layer 16)
+LLAMA3_L16_RELU_SAE_CFG = SAEConfig(
+    release="singh",
+    name="relu",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_16/relu",
+    dict_class="standard",
     dict_size=16384,
-    batch_size=100,
-)
-BTOPK_LLAMA3_SAE_CFG = SAEConfig(
-    name="Batch Top K",
-    local_weights_path="artifacts/trained_saes/llama3/batch_top_k",
-    dict_class="batch_top_k",
-    dict_size=16384,
-    batch_size=100,
-)
-RELU_LLAMA3_SAE_CFG = SAEConfig(
-    name="ReLU",
-    local_weights_path="artifacts/trained_saes/llama3/relu",
-    dict_class="relu",
-    dict_size=16384,
-    batch_size=100,
-)
-JUMPRELU_LLAMA3_SAE_CFG = SAEConfig(
-    name="Jump ReLU",
-    local_weights_path="artifacts/trained_saes/llama3/jump_relu",
-    dict_class="jump_relu",
-    dict_size=16384,
-    batch_size=100,
+    batch_size=10,
 )
 
-LLAMA3_SAE_CFGS = [
-    RELU_LLAMA3_SAE_CFG,
-    JUMPRELU_LLAMA3_SAE_CFG,
-    TOPK_LLAMA3_SAE_CFG,
-    BTOPK_LLAMA3_SAE_CFG,
+LLAMA3_L16_TOPK_SAE_CFG = SAEConfig(
+    release="singh",
+    name="topk",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_16/topk",
+    dict_class="standard",
+    dict_size=16384,
+    batch_size=10,
+)
+
+LLAMA3_L16_BATCHTOPK_SAE_CFG = SAEConfig(
+    release="singh",
+    name="batchtopk",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_16/batchtopk",
+    dict_class="standard",
+    dict_size=16384,
+    batch_size=10,
+)
+
+LLAMA3_L16_TEMPORAL_SAE_CFG = SAEConfig(
+    release="singh",
+    name="temporal",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_16/temporal",
+    dict_class="temporal",
+    dict_size=16384,
+    batch_size=10,
+)
+
+# Llama-3.1-8B SAE configs (layer 26)
+LLAMA3_L26_RELU_SAE_CFG = SAEConfig(
+    release="singh",
+    name="relu",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_26/relu",
+    dict_class="standard",
+    dict_size=16384,
+    batch_size=10,
+)
+
+LLAMA3_L26_TOPK_SAE_CFG = SAEConfig(
+    release="singh",
+    name="topk",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_26/topk",
+    dict_class="standard",
+    dict_size=16384,
+    batch_size=10,
+)
+
+LLAMA3_L26_BATCHTOPK_SAE_CFG = SAEConfig(
+    release="singh",
+    name="batchtopk",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_26/batchtopk",
+    dict_class="standard",
+    dict_size=16384,
+    batch_size=10,
+)
+
+LLAMA3_L26_TEMPORAL_SAE_CFG = SAEConfig(
+    release="singh",
+    name="temporal",
+    local_weights_path="artifacts/trained_saes/llama-3.1-8B/layer_26/temporal",
+    dict_class="temporal",
+    dict_size=16384,
+    batch_size=10,
+)
+
+LLAMA3_L16_SAE_CFGS = [
+    LLAMA3_L16_RELU_SAE_CFG,
+    LLAMA3_L16_TOPK_SAE_CFG,
+    LLAMA3_L16_BATCHTOPK_SAE_CFG,
+    LLAMA3_L16_TEMPORAL_SAE_CFG,
 ]
+
+LLAMA3_L26_SAE_CFGS = [
+    LLAMA3_L26_RELU_SAE_CFG,
+    LLAMA3_L26_TOPK_SAE_CFG,
+    LLAMA3_L26_BATCHTOPK_SAE_CFG,
+    LLAMA3_L26_TEMPORAL_SAE_CFG,
+]
+
+LLAMA3_SAE_CFGS = LLAMA3_L16_SAE_CFGS + LLAMA3_L26_SAE_CFGS
 
 ######## Activation Cache Config ########
 
@@ -458,27 +516,16 @@ def get_configs(cfg_class, **kwargs):
 
 
 def get_gemma_act_configs(cfg_class, act_paths, **kwargs):
-    if act_paths is None:
-        act_paths = (
-            ([None], ["activations", "surrogate"]),
-            (GEMMA2_SNAPSHOT_SAE_CFGS, ["latents", "reconstructions"]),
-            (
-                [TEMPORAL_GEMMA2_SAE_CFG],
-                [
-                    "novel_codes",
-                    "novel_recons",
-                    "pred_codes",
-                    "pred_recons",
-                    "total_recons",
-                ],
-            ),
-        )
-
     all_cfgs = []
+
     for sae_cfg, act_path in act_paths:
         kwargs["sae"] = sae_cfg
         kwargs["act_path"] = act_path
-        all_cfgs.extend(get_configs(cfg_class, **kwargs))
+        cfgs = get_configs(cfg_class, **kwargs)
+        for cfg in cfgs: 
+            if cfg.sae is not None:
+                cfg.act_path = os.path.join(cfg.sae.name, cfg.act_path)
+            all_cfgs.append(cfg)
 
     return all_cfgs
 

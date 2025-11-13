@@ -49,14 +49,12 @@ def experiment(act_BLS, tokens_BL, tokenizer, cfg):
             attr_score = top_logits_val_SK[s, k]
             print(f"\t{vocab_str}: {attr_score}")
 
-        
         print(f"-------Max activating examples:")
         for rank in range(10):
             b_idx = top_b_indices[rank, s].item()
             l_idx = top_l_indices[rank, s].item()
             value = top_values[rank, s].item()
             print(f"  Rank {rank+1}: B={b_idx}, L={l_idx}, value={value:.6f}")
-
 
             token_strs_L = load_tokens_of_story(
                 tokens_BP=tokens_BL,
@@ -103,6 +101,7 @@ def frequency_histogram(act_BLD, cfg):
 
     savefig(f"act_frequency_histogram_{cfg.sae.name}")
 
+
 def get_logit_lens(cfg):
     # Load SAE
     sae = load_sae(cfg)
@@ -120,10 +119,10 @@ def get_logit_lens(cfg):
 
 def main():
     cfg = ExperimentConfig(
-        sae=TEMPORAL_SELFTRAIN_SAE_CFG,
+        sae=LLAMA3_L16_TEMPORAL_SAE_CFG,
         # sae=BATCHTOPK_SELFTRAIN_SAE_CFG,
         sae_act_type="novel_codes",
-        llm=GEMMA2_LLM_CFG,
+        llm=LLAMA3_L16_LLM_CFG,
         env=ENV_CFG,
         data=WEBTEXT_DS_CFG,
     )
@@ -135,7 +134,7 @@ def main():
         [act_type, "tokens"],
         cfg.env.activations_dir,
         compared_attributes=["llm", "data"],
-        verbose=False,
+        verbose=True,
     )
     act_BLD = artifacts[act_type]
     act_BLD = act_BLD.to(cfg.env.device)

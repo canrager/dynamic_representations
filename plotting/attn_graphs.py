@@ -93,7 +93,7 @@ def plot_attn_graphs(graphs_AHLL, tokens, cfg):
 
     # Save plot
     os.makedirs(cfg.env.plots_dir, exist_ok=True)
-    save_name = f"attn_maps_{cfg.llm.name}_{cfg.data.name}.png"
+    save_name = f"attn_maps_{cfg.llm.name}_{cfg.sae.name}_{cfg.data.name}.pdf"
     plot_path = os.path.join(cfg.env.plots_dir, save_name)
     plt.savefig(plot_path, dpi=300, bbox_inches="tight")
     print(f"saved figure to: {plot_path}")
@@ -184,7 +184,7 @@ def plot_attn_sum_across_heads(graphs_BAHLL, tokens_BP, cfg):
 
     # Save plot
     os.makedirs(cfg.env.plots_dir, exist_ok=True)
-    save_name = f"attn_maps_sum_heads_stories_{cfg.llm.name}_{cfg.data.name}.png"
+    save_name = f"attn_maps_sum_heads_stories_{cfg.llm.name}_{cfg.sae.name}_{cfg.data.name}.png"
     plot_path = os.path.join(cfg.env.plots_dir, save_name)
     plt.savefig(plot_path, dpi=200, bbox_inches="tight")
     print(f"saved figure to: {plot_path}")
@@ -203,11 +203,11 @@ def main():
         use_log_scale=False,
         # Artifacts
         env=ENV_CFG,
-        data=WEBTEXT_DS_CFG,
+        data=CODE_DS_CFG,
         llm=GEMMA2_LLM_CFG,
-        sae=TEMPORAL_SELFTRAIN_SAE_CFG,
+        sae=GEMMA2_TEMPORAL_SAE_CFG,
     )
-    cfg.data.num_sequences = 10
+    # cfg.data.num_sequences = 10
 
     art, _ = load_matching_activations(
         cfg,
@@ -246,8 +246,8 @@ def main():
     # Create and save plot
     plot_attn_graphs(graphs_AHLL, tokens, cfg)
 
-    # Create and save sum across heads plot for multiple stories
-    plot_attn_sum_across_heads(graphs_BAHLL, art["tokens"], cfg)
+    # # Create and save sum across heads plot for multiple stories
+    # plot_attn_sum_across_heads(graphs_BAHLL, art["tokens"], cfg)
 
 
 if __name__ == "__main__":

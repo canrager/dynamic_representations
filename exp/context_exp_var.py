@@ -14,14 +14,14 @@ from src.configs import *
 
 
 @dataclass
-class PCAExpVarConfig:
-    window_sizes: List[str]
+class ContextExpVarConfig:
+    window_size: int
     selected_context_length: int
-    num_windows: int
+    num_windows_across_context: int
     do_log_spacing: bool
-    reconstruction_thresh: float
     act_path: str
     smallest_window_start: int
+    num_sequences: int
 
     env: EnvironmentConfig
     data: DatasetConfig
@@ -29,9 +29,12 @@ class PCAExpVarConfig:
     sae: SAEConfig
 
 
-def get_window_indices(cfg: PCAExpVarConfig, window_size=int):
-    # An index window [ws, we] is spanned by window start (ws) and window end (we, inclusive) indices.
-    smallest_we = window_size - 1 + cfg.smallest_window_start
+def get_window_indices(cfg: ContextExpVarConfig):
+    if cfg.window_size == "growing":
+        smallest_we = cfg.smallest_window_start
+    else:
+        # An index window [ws, we] is spanned by window start (ws) and window end (we, inclusive) indices.
+        smallest_we = cfg.window_size - 1 + cfg.smallest_window_start
 
     largest_we = (
         cfg.selected_context_length - 2
@@ -41,23 +44,46 @@ def get_window_indices(cfg: PCAExpVarConfig, window_size=int):
         # Log steps from smallest we to largest we, first and las indices of wes should be those
         log_start = th.log10(th.tensor(smallest_we, dtype=th.float))
         log_end = th.log10(th.tensor(largest_we, dtype=th.float))
-        log_steps = th.linspace(log_start, log_end, cfg.num_windows)
+        # Scale num_windows by the fraction of log-space covered
+        num_windows = max(
+            (cfg.num_windows_across_context * (log_end - log_start) / log_end).int().item(), 2
+        )
+        log_steps = th.linspace(log_start, log_end, num_windows)
         wes = th.round(10**log_steps).int()
     else:
         # Linear steps from smallest we to largest we, first and las indices of wes should be those
-        wes = th.linspace(smallest_we, largest_we, cfg.num_windows, dtype=th.int)
+        num_windows = cfg.num_windows_across_context / cfg.selected_context_length * smallest_we
+        wes = th.linspace(smallest_we, largest_we, num_windows, dtype=th.int)
 
-    B = min(cfg.data.num_sequences, 500) #// window_size
-    batch_indices_WBP = einops.repeat(th.arange(B), "B -> W B P", W=cfg.num_windows, P=window_size)
+    if cfg.window_size == "growing":
+        batch_indices_WBP, context_indices_WBP = [], []
 
-    pos_indices_WBP = th.zeros(cfg.num_windows, B, window_size, dtype=th.int, device="cpu")
-    for i, we in enumerate(wes):
-        pos_indices_WBP[i, :] = th.arange(we + 1 - window_size, we + 1, dtype=th.int, device="cpu")
+        for we in wes:
+            context_indices_BP = th.arange(smallest_we, we + 1, dtype=th.int)
+            context_indices_WBP.append(context_indices_BP)
+            batch_indices_WBP.append(
+                einops.repeat(
+                    th.arange(cfg.num_sequences), "B -> B P", P=context_indices_BP.shape[0]
+                )
+            )
 
-    return batch_indices_WBP, pos_indices_WBP, wes, B
+    else:
+        batch_indices_WBP = einops.repeat(
+            th.arange(cfg.num_sequences), "B -> W B P", W=num_windows, P=cfg.window_size
+        )
+
+        context_indices_WBP = th.zeros(
+            num_windows, cfg.num_sequences, cfg.window_size, dtype=th.int, device="cpu"
+        )
+        for i, we in enumerate(wes):
+            context_indices_WBP[i, :] = th.arange(
+                we + 1 - cfg.window_size, we + 1, dtype=th.int, device="cpu"
+            )
+
+    return batch_indices_WBP, context_indices_WBP, wes, num_windows
 
 
-def context_var_explained(context_act_BpD, y_act_BD, cfg: PCAExpVarConfig):
+def context_var_explained(context_act_BpD, y_act_BD, cfg: ContextExpVarConfig):
     """
     Question: How much variance can be explained by just projecting a token onto it's context
     Uncertainty: Should we center at all? By y_act_BD, since we're computing the the variance over that?
@@ -95,41 +121,39 @@ def context_var_explained(context_act_BpD, y_act_BD, cfg: PCAExpVarConfig):
     return frac_var_exp.cpu(), mean_rank.cpu()
 
 
-def single_pca_experiment(cfg: PCAExpVarConfig, acts_BPD: th.Tensor):
-    assert cfg.selected_context_length > max(cfg.window_sizes)
+def single_pca_experiment(cfg: ContextExpVarConfig, acts_BPD: th.Tensor):
 
-    results = {}
-    for window_size in tqdm(cfg.window_sizes, desc="Window size"):
-        dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
-        fve = th.zeros(cfg.num_windows, dtype=dtype)
-        ncomp = th.zeros(cfg.num_windows, dtype=dtype)
-        batch_indices_WBP, pos_indices_WBP, wes, B = get_window_indices(cfg, window_size)
+    dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
+    batch_indices_WBP, context_indices_WBP, wes, num_windows = get_window_indices(cfg)
+    fve = th.zeros(num_windows, dtype=dtype)
+    ncomp = th.zeros(num_windows, dtype=dtype)
 
-        for window_idx in trange(cfg.num_windows):
-            batch_indices_BP = batch_indices_WBP[window_idx]
-            pos_indices_BP = pos_indices_WBP[window_idx]
-            train_act_BpD = acts_BPD[batch_indices_BP, pos_indices_BP]
-            eval_act_BD = acts_BPD[
-                :, wes[window_idx] + 1
-            ]  # +1 since we're evaluating the next token
+    for window_idx in trange(num_windows):
+        batch_indices_BP = batch_indices_WBP[window_idx]
+        context_indices_BP = context_indices_WBP[window_idx]
+        train_act_BpD = acts_BPD[batch_indices_BP, context_indices_BP]
 
-            frac_var_exp, num_pca_components = context_var_explained(
-                train_act_BpD, eval_act_BD, cfg
-            )
-            fve[window_idx] = frac_var_exp
-            ncomp[window_idx] = num_pca_components
+        arange_B = th.arange(cfg.num_sequences, dtype=th.int)
+        eval_index_B = th.ones(cfg.num_sequences, dtype=th.int) * (
+            wes[window_idx] + 1
+        )  # +1 since were evaluating the next
+        eval_act_BD = acts_BPD[arange_B, eval_index_B]
 
-        results[window_size] = dict(
-            window_end_pos=wes.cpu().tolist(),
-            frac_var_exp=fve.cpu().tolist(),
-            num_pca_components=ncomp.cpu().tolist(),
-            num_seq_per_token=B,
-        )
+        frac_var_exp, num_pca_components = context_var_explained(train_act_BpD, eval_act_BD, cfg)
+        fve[window_idx] = frac_var_exp
+        ncomp[window_idx] = num_pca_components
+
+    results = dict(
+        window_end_pos=wes.cpu().tolist(),
+        frac_var_exp=fve.cpu().tolist(),
+        num_pca_components=ncomp.cpu().tolist(),
+        num_seq_per_token=cfg.num_sequences,
+    )
 
     # Save results
     results["config"] = asdict(cfg)
     datetetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_path = os.path.join(cfg.env.results_dir, f"pca_exp_var_{datetetime_str}.json")
+    save_path = os.path.join(cfg.env.results_dir, f"context_exp_var_{datetetime_str}.json")
     with open(save_path, "w") as f:
         json.dump(results, f)
     print(f"saved results to: {save_path}")
@@ -142,25 +166,38 @@ def single_pca_experiment(cfg: PCAExpVarConfig, acts_BPD: th.Tensor):
 
 def main():
     configs = get_gemma_act_configs(
-        cfg_class=PCAExpVarConfig,
-        window_sizes=[[100]],
-        # window_sizes=[[1, 3, 10, 32, 100, 316]],
+        cfg_class=ContextExpVarConfig,
+        # window_size=[1, 3, 8, 10, 20, 32, 50, 100, 120, 316, "growing"],
+        # window_size=[10, 23, 58, 161, "growing"],
+        # window_size=[9],
+        window_size=[9, 40],
+        # window_size=[1, 3, 10, 32, "growing"],
+        # window_size=["growing"],
+        # window_size=[490],
         selected_context_length=500,
-        # num_windows=50,
-        num_windows=5,
-        do_log_spacing=False,
-        smallest_window_start=2,
-        reconstruction_thresh=0.9,
+        num_windows_across_context=100,
+        do_log_spacing=True,
+        smallest_window_start=10,
+        num_sequences=1000,
         # Artifacts
         env=ENV_CFG,
+        # data=DatasetConfig(
+        #     name="Webtext",
+        #     hf_name="monology/pile-uncopyrighted",
+        #     num_sequences=50000,
+        #     context_length=100,
+        # ),
         data=DatasetConfig(
             name="Webtext",
             hf_name="monology/pile-uncopyrighted",
             num_sequences=1000,
             context_length=500,
         ),
-        # llm=LLAMA3_LLM_CFG,
-        llm=GEMMA2_LLM_CFG,
+        # data=[CODE_DS_CFG, SIMPLESTORIES_DS_CFG],
+        # num_sequences=[2, 10, 100, 1000, 1000, 50000],
+        # num_sequences=[2, 10, 100, 1000],
+        llm=LLAMA3_L15_LLM_CFG,
+        # llm=GEMMA2_LLM_CFG,
         sae=None,
         act_paths=(
             (
@@ -202,7 +239,7 @@ def main():
             [act_path],
             cfg.env.activations_dir,
             compared_attributes=["llm", "data"],
-            verbose=True,
+            verbose=False,
         )
         for key in artifacts:
             acts_BPD = artifacts[key]

@@ -170,13 +170,13 @@ def experiment(act_BLD, tokens_BL, tokenizer, cfg: ExperimentConfig):
 
     # Save results
     datetetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if cfg.act_path == "activations":
+    if "activations" in cfg.act_path:
         title_prefix = "LLM_activations"
-    elif cfg.act_path == "codes":
+    elif "codes" in cfg.act_path:
         title_prefix = f"{cfg.sae.name}_codes"
-    elif cfg.act_path == "pred_codes":
+    elif "pred_codes" in cfg.act_path:
         title_prefix = f"{cfg.sae.name}_pred_codes"
-    elif cfg.act_path == "novel_codes":
+    elif "novel_codes" in cfg.act_path:
         title_prefix = f"{cfg.sae.name}_novel_codes"
     else:
         raise ValueError()
@@ -199,7 +199,7 @@ def main():
             (
                 [None],
                 [
-                    "activations",
+                    # "activations",
                     # "surrogate"
                 ],
             ),
@@ -211,14 +211,14 @@ def main():
             #     ]
             # ),
             (
-                [BATCHTOPK_SELFTRAIN_SAE_CFG],
+                [GEMMA2_BATCHTOPK_SAE_CFG],
                 [
-                    "codes",
+                    # "codes",
                     # "recons"
                 ],
             ),
             (
-                [TEMPORAL_SELFTRAIN_SAE_CFG],
+                [GEMMA2_TEMPORAL_SAE_CFG],
                 [
                     # "novel_codes",
                     # "novel_recons",
@@ -230,11 +230,11 @@ def main():
         ),
         # Position subsampling
         min_p=0,
-        max_p=499,
-        num_p=499,
+        max_p=40,
+        num_p=30,
         do_log_scale=False,
         # UMAP parameters
-        n_components=2,
+        n_components=3,
         n_neighbors=15,
         min_dist=0.1,
         metric="euclidean",
@@ -250,29 +250,30 @@ def main():
         #     context_length=500,  # Use variable length with padding
         # ),
         # data=CHAT_DS_CFG,
-        data=SIMPLESTORIES_DS_CFG,
-        # llm=IT_GEMMA2_LLM_CFG,
-        llm=GEMMA2_LLM_CFG,
+        data=ALPACA_DS_CFG,
+        # data=SIMPLESTORIES_DS_CFG,
+        llm=IT_GEMMA2_LLM_CFG,
+        # llm=GEMMA2_LLM_CFG,
         # llm=LLAMA3_LLM_CFG,
         sae=None,  # set by act_paths
         act_path=None,  # set by act_paths
     )
 
     for cfg in configs:
-        # Load activations
-        if cfg.sae is not None:
-            act_type = os.path.join(cfg.sae.name, cfg.act_path)
-        else:
-            act_type = cfg.act_path
+        # # Load activations
+        # if cfg.sae is not None:
+        #     act_type = os.path.join(cfg.sae.name, cfg.act_path)
+        # else:
+        #     act_type = cfg.act_path
 
         artifacts, _ = load_matching_activations(
             cfg,
-            [act_type, "tokens"],
+            [cfg.act_path, "tokens"],
             cfg.env.activations_dir,
             compared_attributes=["llm", "data"],
             verbose=False,
         )
-        act_BLD = artifacts[act_type]
+        act_BLD = artifacts[cfg.act_path]
         act_BLD = act_BLD.to(cfg.env.device)
         tokens_BL = artifacts["tokens"]
 

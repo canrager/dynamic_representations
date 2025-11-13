@@ -40,17 +40,31 @@ def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens):
     # NOTE: exact tokenization varies by model, therefore, it can be that different models see different stories
 
     if dataset_name == "SimpleStories/SimpleStories":
-        hf_text_identifier = "story"
+        preprocessing_fn = lambda x: x['story']
         hf_split_identifier = "train"
         do_chat_template = False
 
     elif dataset_name == "HuggingFaceH4/ultrachat_200k":
-        hf_text_identifier = "messages"
+        preprocessing_fn = lambda x: x['messages']
         hf_split_identifier = "train_sft"
         do_chat_template = True
 
+    elif dataset_name == "tatsu-lab/alpaca":
+        do_chat_template = True
+        hf_split_identifier = "train"
+        preprocessing_fn = lambda x : [
+            {
+                "content": f"{x['instruction']} {x['input']}",
+                "role": "user"
+            },
+            {
+                "content": f"{x['output']}",
+                "role": "assistant"
+            }
+        ]
+
     else:
-        hf_text_identifier = "text"
+        preprocessing_fn = lambda x: x['text']
         hf_split_identifier = "train"
         do_chat_template = False
 
@@ -64,7 +78,7 @@ def collect_from_hf(tokenizer, dataset_name, num_stories, num_tokens):
         if len(inputs_BP) >= num_stories:
             break
 
-        story_text = story_item[hf_text_identifier]
+        story_text = preprocessing_fn(story_item)
 
         if do_chat_template:
             input_ids_P = tokenizer.apply_chat_template(story_text, return_tensors="pt")
@@ -471,11 +485,11 @@ def batch_standard_sae_cache(
 
 
 def batch_sae_cache(sae, act_BPD, cfg):
-    if "eleuther" in cfg.sae.name.lower():
+    if cfg.sae.release == "eleuther":
         forward_output = batch_eleuther_sae_cache(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)
-    elif "temporal" in cfg.sae.name.lower():
+    elif cfg.sae.release == "singh" and "temporal" in cfg.sae.name.lower():
         forward_output = batch_temporal_sae_cache(sae, act_BPD, cfg)
-    elif (not "temporal" in cfg.sae.name.lower()) and ("selftrain" in cfg.sae.local_weights_path.lower()):
+    elif cfg.sae.release == "singh" and (not "temporal" in cfg.sae.name.lower()):
         forward_output = batch_standard_sae_cache(sae, act_BPD, cfg)
     else:
         forward_output = batch_dictionarylearning_sae_cache(sae, act_BPD, cfg.sae.batch_size, cfg.env.device)

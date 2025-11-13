@@ -55,7 +55,7 @@ def compute_normalized_mse(x_hat_BLD, x_BLD):
 
 
 def compute_fraction_variance_explained(x_hat_BLD, x_BLD):
-    total_variance = th.var(x_hat_BLD, dim=0).sum(dim=-1)
+    total_variance = th.var(x_BLD, dim=0).sum(dim=-1)
     residual_variance = th.var(x_hat_BLD - x_BLD, dim=0).sum(dim=-1)
     return 1 - residual_variance / total_variance
 
@@ -103,7 +103,6 @@ def batch_compute_statistics(sae_cache_dir: str, cfg: BasicStatsConfig):
 
     results["sequence_pos_indices"] = ps.tolist()
     ps = ps.to(cfg.env.device)
-
 
     # Identify all filenames in dir that contain "codes" or "recons".
     pt_files = [f for f in os.listdir(sae_cache_dir) if f.endswith(".pt")]
@@ -181,7 +180,7 @@ def main():
         cfg_class=BasicStatsConfig,
         min_p=1,
         max_p=499,
-        num_p=20,
+        num_p=10,
         do_log_scale=False,
         # Artifacts
         env=ENV_CFG,
@@ -189,7 +188,13 @@ def main():
         data=[WEBTEXT_DS_CFG, SIMPLESTORIES_DS_CFG, CODE_DS_CFG],
         llm=GEMMA2_LLM_CFG,
         # sae=RELU_2X_DENSER_SELFTRAIN_SAE_CFG,
-        sae=GEMMA2_SELFTRAIN_SAE_CFGS,
+        sae=[
+            # GEMMA2_BATCHTOPK_SAE_CFG,
+            # GEMMA2_TOPK_SAE_CFG,
+            # GEMMA2_RELU_SAE_CFG,
+            # GEMMA2_TEMPORAL_SAE_CFG,
+            GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG
+        ],
     )
 
     for cfg in configs:

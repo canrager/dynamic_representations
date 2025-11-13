@@ -23,6 +23,7 @@ dependencies = [
     "mteb[xet]>=1.39.7",
     "temporalsaes",
     "sentence-transformers>=3.0.0",
+    "ipykernel>=7.1.0",
 ]
 
 [build-system]

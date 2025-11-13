@@ -135,7 +135,7 @@ def load_dictionarylearning_sae(cfg):
     sae.activation_dim = cfg.sae.dict_size
     return sae
 
-def load_selftrain_sae(cfg):
+def load_singh_sae(cfg):
     dict_class = SAE_STR_TO_CLASS[cfg.sae.dict_class]
     dtype = DTYPE_STR_TO_CLASS[cfg.env.dtype]
     sae = dict_class.from_pretrained(
@@ -146,7 +146,9 @@ def load_selftrain_sae(cfg):
     return sae
 
 def load_sae(cfg):
-    if "selftrain" in cfg.sae.local_weights_path:
-        return load_selftrain_sae(cfg)
-    else:
+    if cfg.sae.release == "singh":
+        return load_singh_sae(cfg)
+    elif cfg.sae.release == "saebench":
         return load_dictionarylearning_sae(cfg)
+    else:
+        raise ValueError("Unknown SAE release.")
