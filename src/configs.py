@@ -9,6 +9,7 @@ import torch as th
 from src.dictionary import AutoEncoder, JumpReluAutoEncoder, AutoEncoderTopK, BatchTopKSAE
 from sae.saeTemporal import TemporalSAE
 from sae.saeStandard import SAEStandard
+from sae.saeTemporalSplit import TemporalSplitSAE
 
 
 ######## Environment #########
@@ -175,6 +176,7 @@ SAE_STR_TO_CLASS = {
     "jump_relu": JumpReluAutoEncoder,
     "temporal": TemporalSAE,
     "standard": SAEStandard,
+    "temporal_split": TemporalSplitSAE,
 }
 
 # Gemma-2-2B SAE configs (layer 12)
@@ -345,6 +347,15 @@ GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG = SAEConfig(
     name="temporal_pred_only",
     local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/temporal_pred_only",
     dict_class="temporal",
+    dict_size=9216,
+    batch_size=10,
+)
+
+GEMMA2_TEMPORAL_SPLIT_SAE_CFG = SAEConfig(
+    release="singh",
+    name="temporal_split",
+    local_weights_path="artifacts/trained_saes/gemma-2-2B/layer_12/split_tfa",
+    dict_class="temporal_split",
     dict_size=9216,
     batch_size=10,
 )

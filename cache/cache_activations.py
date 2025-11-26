@@ -228,7 +228,8 @@ def main():
             # GEMMA2_TOPK_SAE_CFG,
             # GEMMA2_RELU_SAE_CFG,
             # GEMMA2_TEMPORAL_SAE_CFG,
-            GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG
+            # GEMMA2_TEMPORAL_PRED_ONLY_SAE_CFG
+            GEMMA2_TEMPORAL_SPLIT_SAE_CFG
         ],
         env=ENV_CFG,
     )

@@ -88,6 +88,10 @@ def plot_context_projection_paper(results, cfg, fit_growing=False):
     window_sizes, num_sequences = [], []
     growing_data = {"x": [], "y": []}
 
+    # Store baseline data for growing windows
+    baseline_random_data = {"x": [], "y": []}
+    baseline_first_token_data = {"x": [], "y": []}
+
     for filename, result in results.items():
         window_size = result["config"]["window_size"]
         window_sizes.append(window_size)
@@ -113,6 +117,28 @@ def plot_context_projection_paper(results, cfg, fit_growing=False):
             }
         )
 
+        # Extract baseline data for growing windows
+        if window_size == "growing":
+            if "frac_var_exp_random" in result:
+                frac_var_exp_random = (
+                    th.tensor(result["frac_var_exp_random"])
+                    if isinstance(result["frac_var_exp_random"], list)
+                    else result["frac_var_exp_random"]
+                )
+                baseline_random_data["x"].extend(window_end_pos.cpu().numpy())
+                baseline_random_data["y"].extend(frac_var_exp_random.cpu().numpy())
+
+            if "frac_var_exp_first_token" in result:
+                frac_var_exp_first_token = (
+                    th.tensor(result["frac_var_exp_first_token"])
+                    if isinstance(result["frac_var_exp_first_token"], list)
+                    else result["frac_var_exp_first_token"]
+                )
+                baseline_first_token_data["x"].extend(window_end_pos.cpu().numpy())
+                baseline_first_token_data["y"].extend(
+                    frac_var_exp_first_token.cpu().numpy()
+                )
+
     # unique_window_sizes = get_unique_sorted(window_sizes)
     # unique_num_sequences = get_unique_sorted(num_sequences)
 
@@ -131,7 +157,9 @@ def plot_context_projection_paper(results, cfg, fit_growing=False):
     num_seq_to_linestyle = {
         ns: linestyles[i % len(linestyles)] for i, ns in enumerate(sorted(all_num_seqs))
     }
-    num_seq_to_marker = {ns: markers[i % len(markers)] for i, ns in enumerate(sorted(all_num_seqs))}
+    num_seq_to_marker = {
+        ns: markers[i % len(markers)] for i, ns in enumerate(sorted(all_num_seqs))
+    }
 
     # Plot each combination of window size and num_sequences
     for i, ws in enumerate(window_sizes):
@@ -156,7 +184,11 @@ def plot_context_projection_paper(results, cfg, fit_growing=False):
 
                 # Only add label for the first line of each (ws, num_seq) combination
                 if idx == 0:
-                    label = f"WS {ws}, N={num_seq}" if num_seq is not None else f"Window Size {ws}"
+                    label = (
+                        f"WS {ws}, N={num_seq}"
+                        if num_seq is not None
+                        else f"Window Size {ws}"
+                    )
                 else:
                     label = None
 
@@ -198,6 +230,39 @@ def plot_context_projection_paper(results, cfg, fit_growing=False):
                     lw=markersize,
                 )
 
+    # Plot baselines for growing windows
+    if baseline_random_data["x"]:
+        x_random = np.array(baseline_random_data["x"])
+        y_random = np.array(baseline_random_data["y"])
+        # Sort for proper line plotting
+        sort_idx = np.argsort(x_random)
+        x_random = x_random[sort_idx]
+        y_random = y_random[sort_idx]
+        ax1.plot(
+            x_random,
+            y_random,
+            color="grey",
+            linestyle="-",
+            lw=5,
+            label="Random directions baseline",
+        )
+
+    if baseline_first_token_data["x"]:
+        x_first_token = np.array(baseline_first_token_data["x"])
+        y_first_token = np.array(baseline_first_token_data["y"])
+        # Sort for proper line plotting
+        sort_idx = np.argsort(x_first_token)
+        x_first_token = x_first_token[sort_idx]
+        y_first_token = y_first_token[sort_idx]
+        ax1.plot(
+            x_first_token,
+            y_first_token,
+            color="grey",
+            linestyle="--",
+            lw=5,
+            label="First token baseline",
+        )
+
     ax1.set_ylim(top=1, bottom=0)
     ax1.set_xlabel("Window End Position")
     ax1.set_ylabel("Fraction of Variance Explained")
@@ -209,7 +274,9 @@ def plot_context_projection_paper(results, cfg, fit_growing=False):
     # )
     ax1.set_xscale("log")
     # plt.tight_layout()
-    savefig(f"context_exp_var_{cfg.data.name}_{cfg.llm.name.split(".")[0]}", suffix=".pdf")
+    savefig(
+        f"context_exp_var_{cfg.data.name}_{cfg.llm.name.split(".")[0]}", suffix=".pdf"
+    )
 
 
 def main():
@@ -270,8 +337,8 @@ def main():
         # data=SIMPLESTORIES_DS_CFG,
         # data=CODE_DS_CFG,
         data=WEBTEXT_DS_CFG,
-        llm=LLAMA3_L15_LLM_CFG,
-        # llm=GEMMA2_LLM_CFG,
+        # llm=LLAMA3_L15_LLM_CFG,
+        llm=GEMMA2_LLM_CFG,
         sae=None,  # set by act_paths
         act_path=None,  # set by act_paths
     )
